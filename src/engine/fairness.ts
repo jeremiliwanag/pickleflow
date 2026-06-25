@@ -5,6 +5,7 @@
 // ============================================
 
 import type { Player, Session, SkillMatchingSetting } from "../types";
+import { skillRatingToNumber } from "../types";
 
 // Weight constants -- adjust these to tune fairness
 const WEIGHTS = {
@@ -22,7 +23,8 @@ const WEIGHTS = {
 // ============================================
 
 export function getActiveRating(player: Player): number {
-  return player.ratings.organizer ?? player.ratings.self;
+  const rating = player.ratings.organizer ?? player.ratings.self;
+  return skillRatingToNumber(rating);
 }
 
 // ============================================

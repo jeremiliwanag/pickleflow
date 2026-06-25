@@ -6,7 +6,8 @@
 import { describe, it, expect } from "vitest";
 import { generateNextRound, recordMatchResult } from "../engine/scheduler";
 import { getSessionFairnessScore, getActiveRating } from "../engine/fairness";
-import type { Session, Player, Court, Match } from "../types";
+import type { Session, Player, Court, Match, SkillTier } from "../types";
+import { skillRatingToNumber } from "../types";
 
 // ============================================
 // TEST HELPERS
@@ -15,15 +16,20 @@ import type { Session, Player, Court, Match } from "../types";
 function makePlayer(
   id: string,
   name: string,
-  selfRating: number,
-  organizerRating?: number
+  selfTier: SkillTier,
+  selfDivision: number,
+  orgTier?: SkillTier,
+  orgDivision?: number
 ): Player {
   return {
     id,
     name,
     ratings: {
-      self: selfRating,
-      organizer: organizerRating ?? null,
+      self: { tier: selfTier, division: selfDivision },
+      organizer:
+        orgTier && orgDivision
+          ? { tier: orgTier, division: orgDivision }
+          : null,
       system: null,
     },
     attendanceStatus: "PRESENT",
@@ -81,22 +87,22 @@ function makeSession(players: Player[], courts: Court[]): Session {
 // ============================================
 
 const TEST_PLAYERS = [
-  makePlayer("p1", "Toni", 4.5, 4.5),
-  makePlayer("p2", "Carlo", 4.0, 4.0),
-  makePlayer("p3", "Paolo", 4.0, 4.0),
-  makePlayer("p4", "Grace", 3.5, 3.5),
-  makePlayer("p5", "Jeremi", 3.5, 3.5),
-  makePlayer("p6", "Rico", 3.5, 3.5),
-  makePlayer("p7", "Raffy", 3.5, 3.5),
-  makePlayer("p8", "Donna", 3.0, 3.0),
-  makePlayer("p9", "Mark", 3.0, 3.0),
-  makePlayer("p10", "Claire", 3.0, 3.0),
-  makePlayer("p11", "Jojo", 2.5, 2.5),
-  makePlayer("p12", "Ana", 2.5, 2.5),
-  makePlayer("p13", "Emman", 2.5, 2.5),
-  makePlayer("p14", "Bea", 2.0, 2.0),
-  makePlayer("p15", "Mia", 2.0, 2.0),
-  makePlayer("p16", "Liza", 2.0, 2.0),
+  makePlayer("p1", "Toni", "ADVANCED", 4.5, "ADVANCED", 4.5),
+  makePlayer("p2", "Carlo", "ADVANCED", 4.0, "ADVANCED", 4.0),
+  makePlayer("p3", "Paolo", "ADVANCED", 4.0, "ADVANCED", 4.0),
+  makePlayer("p4", "Grace", "INTERMEDIATE", 3.5, "INTERMEDIATE", 3.5),
+  makePlayer("p5", "Jeremi", "INTERMEDIATE", 3.5, "INTERMEDIATE", 3.5),
+  makePlayer("p6", "Rico", "INTERMEDIATE", 3.5, "INTERMEDIATE", 3.5),
+  makePlayer("p7", "Raffy", "INTERMEDIATE", 3.5, "INTERMEDIATE", 3.5),
+  makePlayer("p8", "Donna", "INTERMEDIATE", 3.0, "INTERMEDIATE", 3.0),
+  makePlayer("p9", "Mark", "INTERMEDIATE", 3.0, "INTERMEDIATE", 3.0),
+  makePlayer("p10", "Claire", "INTERMEDIATE", 3.0, "INTERMEDIATE", 3.0),
+  makePlayer("p11", "Jojo", "NOVICE", 2.5, "NOVICE", 2.5),
+  makePlayer("p12", "Ana", "NOVICE", 2.5, "NOVICE", 2.5),
+  makePlayer("p13", "Emman", "NOVICE", 2.5, "NOVICE", 2.5),
+  makePlayer("p14", "Bea", "NOVICE", 2.0, "NOVICE", 2.0),
+  makePlayer("p15", "Mia", "NOVICE", 2.0, "NOVICE", 2.0),
+  makePlayer("p16", "Liza", "NOVICE", 2.0, "NOVICE", 2.0),
 ];
 
 const TEST_COURTS = [
@@ -299,13 +305,17 @@ describe("Scheduler -- Record Match Result", () => {
 });
 
 describe("Scheduler -- Active Rating", () => {
-  it("should use organizer rating when available", () => {
-    const player = makePlayer("px", "Test", 2.5, 3.8);
-    expect(getActiveRating(player)).toBe(3.8);
-  });
+it("should use organizer rating when available", () => {
+  const player = makePlayer("px", "Test", "NOVICE", 2.5, "INTERMEDIATE", 3.8);
+  expect(getActiveRating(player)).toBe(
+    skillRatingToNumber({ tier: "INTERMEDIATE", division: 3.8 })
+  );
+});
 
-  it("should fall back to self rating when organizer rating is null", () => {
-    const player = makePlayer("px", "Test", 2.5);
-    expect(getActiveRating(player)).toBe(2.5);
-  });
+it("should fall back to self rating when organizer rating is null", () => {
+  const player = makePlayer("px", "Test", "NOVICE", 2.5);
+  expect(getActiveRating(player)).toBe(
+    skillRatingToNumber({ tier: "NOVICE", division: 2.5 })
+  );
+});
 });

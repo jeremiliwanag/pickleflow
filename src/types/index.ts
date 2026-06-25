@@ -28,10 +28,42 @@ export type LeavingSoon = "IN_15" | "IN_30" | "AFTER_NEXT" | null;
 // PLAYER
 // ============================================
 
+export type SkillTier =
+  | "BEGINNER"
+  | "NOVICE"
+  | "INTERMEDIATE"
+  | "ADVANCED"
+  | "ELITE";
+
+export interface SkillRating {
+  tier: SkillTier;
+  division: number; // 1.0 to 5.9 with decimals
+}
+
 export interface PlayerRatings {
-  self: number;
-  organizer: number | null;
-  system: number | null;
+  self: SkillRating;
+  organizer: SkillRating | null;
+  system: SkillRating | null;
+}
+
+// Display: "Novice 2.7"
+export function formatSkillRating(rating: SkillRating): string {
+  const tier =
+    rating.tier.charAt(0) + rating.tier.slice(1).toLowerCase();
+  return `${tier} ${rating.division.toFixed(1)}`;
+}
+
+// Internal number for scheduler math
+// Beginner 1-5, Novice 6-11, Intermediate 12-17, Advanced 18-23, Elite 24-29
+export function skillRatingToNumber(rating: SkillRating): number {
+  const base: Record<SkillTier, number> = {
+    BEGINNER: 0,
+    NOVICE: 6,
+    INTERMEDIATE: 12,
+    ADVANCED: 18,
+    ELITE: 24,
+  };
+  return base[rating.tier] + rating.division;
 }
 
 export interface Payment {
