@@ -1,0 +1,166 @@
+// ============================================
+// CORE ENUMS
+// ============================================
+
+export type SessionState = "SETUP" | "ACTIVE" | "PAUSED" | "ENDED";
+
+export type RotationMode = "FAIR_PLAY" | "WINNER_STAYS";
+
+export type BackToBackPolicy = "STRICT" | "SOFT" | "ALLOWED";
+
+export type SkillMatchingSetting = "OFF" | "SOFT" | "STRICT";
+
+export type AttendanceStatus =
+  | "PRESENT"
+  | "ABSENT"
+  | "PLAYING"
+  | "WAITING"
+  | "RESTING"
+  | "LEFT";
+
+export type PaymentStatus = "PAID" | "UNPAID";
+
+export type MatchFormat = "TIMED" | "FIRST_TO_11" | "FIRST_TO_15";
+
+export type LeavingSoon = "IN_15" | "IN_30" | "AFTER_NEXT" | null;
+
+// ============================================
+// PLAYER
+// ============================================
+
+export interface PlayerRatings {
+  self: number;
+  organizer: number | null;
+  system: number | null;
+}
+
+export interface Payment {
+  status: PaymentStatus;
+  amount?: number;
+  method?: "cash" | "gcash" | "card";
+  timestamp?: Date;
+}
+
+export interface Player {
+  id: string;
+  name: string;
+  ratings: PlayerRatings;
+  attendanceStatus: AttendanceStatus;
+  payment: Payment;
+  leavingSoon: LeavingSoon;
+  notes: string;
+  // Stats for this session
+  gamesPlayed: number;
+  gamesWon: number;
+  waitingSince: number | null; // timestamp in ms
+  consecutiveGames: number;
+  partners: string[]; // player IDs played with
+  opponents: string[]; // player IDs played against
+  joinedAt: number; // timestamp in ms
+}
+
+// ============================================
+// COURT
+// ============================================
+
+export interface Court {
+  id: string;
+  number: number;
+  rotationMode: RotationMode;
+  backToBackPolicy: BackToBackPolicy;
+  currentMatch: Match | null;
+  isActive: boolean;
+}
+
+// ============================================
+// MATCH
+// ============================================
+
+export interface Team {
+  playerIds: string[];
+}
+
+export type MatchResult = "TEAM_A" | "TEAM_B" | "PENDING";
+
+export interface Match {
+  id: string;
+  courtId: string;
+  teamA: Team;
+  teamB: Team;
+  result: MatchResult;
+  startTime: number | null; // timestamp in ms
+  endTime: number | null;
+  round: number;
+}
+
+// ============================================
+// SESSION
+// ============================================
+
+export interface SessionRules {
+  matchFormat: MatchFormat;
+  matchDurationMinutes: number;
+  skillMatching: SkillMatchingSetting;
+  maxSkillGap: number;
+}
+
+export interface Session {
+  id: string;
+  name: string;
+  state: SessionState;
+  courts: Court[];
+  players: Player[];
+  rules: SessionRules;
+  matchHistory: Match[];
+  currentRound: number;
+  createdAt: number;
+  startedAt: number | null;
+  endedAt: number | null;
+}
+
+// ============================================
+// SCHEDULER
+// ============================================
+
+export interface PlayerScore {
+  playerId: string;
+  priorityScore: number;
+  breakdown: {
+    gamesPlayedScore: number;
+    waitTimeScore: number;
+    consecutiveScore: number;
+    skillFitScore: number;
+    partnerDiversityScore: number;
+    opponentDiversityScore: number;
+  };
+}
+
+export interface SchedulerInput {
+  session: Session;
+  currentTime: number; // timestamp in ms
+}
+
+export interface CourtAssignment {
+  courtId: string;
+  teamA: Team;
+  teamB: Team;
+}
+
+export interface SchedulerOutput {
+  assignments: CourtAssignment[];
+  updatedPlayers: Player[];
+  fairnessScore: number;
+  round: number;
+}
+
+// ============================================
+// SESSION TEMPLATE
+// ============================================
+
+export interface SessionTemplate {
+  id: string;
+  name: string;
+  courtCount: number;
+  courtModes: RotationMode[];
+  rules: SessionRules;
+}
