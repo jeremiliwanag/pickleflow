@@ -1,10 +1,11 @@
 // ============================================
 // SESSION STORE
-// Zustand store for managing session state
+// Zustand store with Firebase sync
 // ============================================
 
 import { create } from "zustand";
 import { generateNextRound, recordMatchResult } from "../engine/scheduler";
+import { saveSession, updateSession } from "../db/sessionDB";
 import type {
   Session,
   Player,
@@ -62,17 +63,18 @@ function createDefaultSession(name: string, courtCount: number): Session {
 // ============================================
 
 interface SessionStore {
-  // State
   session: Session | null;
   lastOutput: SchedulerOutput | null;
   templates: SessionTemplate[];
+  saving: boolean;
+  error: string | null;
 
   // Session lifecycle
-  createSession: (name: string, courtCount: number) => void;
-  startSession: () => void;
-  pauseSession: () => void;
-  resumeSession: () => void;
-  endSession: () => void;
+  createSession: (name: string, courtCount: number) => Promise<void>;
+  startSession: () => Promise<void>;
+  pauseSession: () => Promise<void>;
+  resumeSession: () => Promise<void>;
+  endSession: () => Promise<void>;
 
   // Player management
   addPlayer: (player: Omit<Player, "id" | "joinedAt">) => void;
@@ -89,15 +91,15 @@ interface SessionStore {
 
   // Scheduler
   generateRound: () => void;
-  recordResult: (
-    match: Match,
-    result: "TEAM_A" | "TEAM_B"
-  ) => void;
+  recordResult: (match: Match, result: "TEAM_A" | "TEAM_B") => Promise<void>;
   applyAssignments: (assignments: CourtAssignment[]) => void;
 
   // Templates
   saveTemplate: (name: string) => void;
   loadTemplate: (templateId: string) => void;
+
+  // Firebase sync
+  syncSession: () => Promise<void>;
 }
 
 // ============================================
@@ -108,49 +110,79 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   session: null,
   lastOutput: null,
   templates: [],
+  saving: false,
+  error: null,
+
+  // ============================================
+  // FIREBASE SYNC
+  // ============================================
+
+  syncSession: async () => {
+    const { session } = get();
+    if (!session) return;
+    set({ saving: true });
+    try {
+      await saveSession(session);
+    } catch (error) {
+      set({ error: "Failed to sync session" });
+    } finally {
+      set({ saving: false });
+    }
+  },
 
   // ============================================
   // SESSION LIFECYCLE
   // ============================================
 
-  createSession: (name, courtCount) => {
+  createSession: async (name, courtCount) => {
     const session = createDefaultSession(name, courtCount);
     set({ session, lastOutput: null });
+    await saveSession(session);
   },
 
-  startSession: () => {
+  startSession: async () => {
     const { session } = get();
     if (!session || session.state !== "SETUP") return;
-    set({
-      session: {
-        ...session,
-        state: "ACTIVE",
-        startedAt: Date.now(),
-      },
+    const updated = {
+      ...session,
+      state: "ACTIVE" as const,
+      startedAt: Date.now(),
+    };
+    set({ session: updated });
+    await updateSession(session.id, {
+      state: "ACTIVE",
+      startedAt: updated.startedAt,
     });
   },
 
-  pauseSession: () => {
+  pauseSession: async () => {
     const { session } = get();
     if (!session || session.state !== "ACTIVE") return;
-    set({ session: { ...session, state: "PAUSED" } });
+    const updated = { ...session, state: "PAUSED" as const };
+    set({ session: updated });
+    await updateSession(session.id, { state: "PAUSED" });
   },
 
-  resumeSession: () => {
+  resumeSession: async () => {
     const { session } = get();
     if (!session || session.state !== "PAUSED") return;
-    set({ session: { ...session, state: "ACTIVE" } });
+    const updated = { ...session, state: "ACTIVE" as const };
+    set({ session: updated });
+    await updateSession(session.id, { state: "ACTIVE" });
   },
 
-  endSession: () => {
+  endSession: async () => {
     const { session } = get();
     if (!session) return;
-    set({
-      session: {
-        ...session,
-        state: "ENDED",
-        endedAt: Date.now(),
-      },
+    const updated = {
+      ...session,
+      state: "ENDED" as const,
+      endedAt: Date.now(),
+    };
+    set({ session: updated });
+    await updateSession(session.id, {
+      state: "ENDED",
+      endedAt: updated.endedAt,
     });
   },
 
@@ -168,36 +200,36 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       joinedAt: Date.now(),
     };
 
-    set({
-      session: {
-        ...session,
-        players: [...session.players, newPlayer],
-      },
-    });
+    const updated = {
+      ...session,
+      players: [...session.players, newPlayer],
+    };
+    set({ session: updated });
+    updateSession(session.id, { players: updated.players });
   },
 
   removePlayer: (playerId) => {
     const { session } = get();
     if (!session) return;
-    set({
-      session: {
-        ...session,
-        players: session.players.filter((p) => p.id !== playerId),
-      },
-    });
+    const updated = {
+      ...session,
+      players: session.players.filter((p) => p.id !== playerId),
+    };
+    set({ session: updated });
+    updateSession(session.id, { players: updated.players });
   },
 
   updatePlayer: (playerId, updates) => {
     const { session } = get();
     if (!session) return;
-    set({
-      session: {
-        ...session,
-        players: session.players.map((p) =>
-          p.id === playerId ? { ...p, ...updates } : p
-        ),
-      },
-    });
+    const updated = {
+      ...session,
+      players: session.players.map((p) =>
+        p.id === playerId ? { ...p, ...updates } : p
+      ),
+    };
+    set({ session: updated });
+    updateSession(session.id, { players: updated.players });
   },
 
   setPlayerStatus: (playerId, status) => {
@@ -217,14 +249,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   updateCourt: (courtId, updates) => {
     const { session } = get();
     if (!session) return;
-    set({
-      session: {
-        ...session,
-        courts: session.courts.map((c) =>
-          c.id === courtId ? { ...c, ...updates } : c
-        ),
-      },
-    });
+    const updated = {
+      ...session,
+      courts: session.courts.map((c) =>
+        c.id === courtId ? { ...c, ...updates } : c
+      ),
+    };
+    set({ session: updated });
+    updateSession(session.id, { courts: updated.courts });
   },
 
   // ============================================
@@ -235,18 +267,30 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const { session } = get();
     if (!session || session.state !== "ACTIVE") return;
 
+    const resetSession = {
+      ...session,
+      players: session.players.map((p) =>
+        p.attendanceStatus === "PLAYING"
+          ? { ...p, attendanceStatus: "PRESENT" as const }
+          : p
+      ),
+    };
+
     const output = generateNextRound({
-      session,
+      session: resetSession,
       currentTime: Date.now(),
     });
 
-    set({
-      lastOutput: output,
-      session: {
-        ...session,
-        players: output.updatedPlayers,
-        currentRound: output.round,
-      },
+    const updated = {
+      ...resetSession,
+      players: output.updatedPlayers,
+      currentRound: output.round,
+    };
+
+    set({ lastOutput: output, session: updated });
+    updateSession(session.id, {
+      players: updated.players,
+      currentRound: updated.currentRound,
     });
   },
 
@@ -272,10 +316,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return { ...court, currentMatch: match };
     });
 
-    set({ session: { ...session, courts: updatedCourts } });
+    const updated = { ...session, courts: updatedCourts };
+    set({ session: updated });
+    updateSession(session.id, { courts: updatedCourts });
   },
 
-  recordResult: (match, result) => {
+  recordResult: async (match, result) => {
     const { session } = get();
     if (!session) return;
 
@@ -297,19 +343,22 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return {
         ...court,
         currentMatch:
-          court.rotationMode === "WINNER_STAYS"
-            ? completedMatch
-            : null,
+          court.rotationMode === "WINNER_STAYS" ? completedMatch : null,
       };
     });
 
-    set({
-      session: {
-        ...session,
-        players: updatedPlayers,
-        courts: updatedCourts,
-        matchHistory: [...session.matchHistory, completedMatch],
-      },
+    const updated = {
+      ...session,
+      players: updatedPlayers,
+      courts: updatedCourts,
+      matchHistory: [...session.matchHistory, completedMatch],
+    };
+
+    set({ session: updated });
+    await updateSession(session.id, {
+      players: updatedPlayers,
+      courts: updatedCourts,
+      matchHistory: updated.matchHistory,
     });
   },
 
@@ -338,12 +387,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (!template) return;
 
     const session = createDefaultSession(template.name, template.courtCount);
-    const courtsWithModes = session.courts.map((court, i) => ({
-      ...court,
-      rotationMode: template.courtModes[i] ?? "FAIR_PLAY",
-      backToBackPolicy:
-        template.courtModes[i] === "WINNER_STAYS" ? "ALLOWED" : "STRICT",
-    } as Court));
+    const courtsWithModes = session.courts.map(
+      (court, i) =>
+        ({
+          ...court,
+          rotationMode: template.courtModes[i] ?? "FAIR_PLAY",
+          backToBackPolicy:
+            template.courtModes[i] === "WINNER_STAYS" ? "ALLOWED" : "STRICT",
+        } as Court)
+    );
 
     set({
       session: {

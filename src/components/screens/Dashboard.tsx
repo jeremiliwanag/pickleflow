@@ -83,17 +83,25 @@ export default function Dashboard({ onBack }: DashboardProps) {
           <p className="text-sm font-medium text-gray-500 mb-2">
             Last Round -- Fairness Score: {lastOutput.fairnessScore}%
           </p>
-          {lastOutput.assignments.map((a, i) => (
-            <div key={i} className="py-2 border-b last:border-0">
-              <p className="text-xs text-gray-400 mb-1">
-                Court {a.courtId}
-              </p>
-              <p className="text-sm">
-                {a.teamA.playerIds.join(" + ")} vs{" "}
-                {a.teamB.playerIds.join(" + ")}
-              </p>
-            </div>
-          ))}
+{lastOutput.assignments.map((a, i) => {
+  const court = session.courts.find((c) => c.id === a.courtId);
+  const getName = (id: string) =>
+    session.players.find((p) => p.id === id)?.name ?? id;
+  return (
+    <div key={i} className="py-2 border-b last:border-0">
+      <p className="text-xs text-gray-400 mb-1">
+        Court {court?.number} -- {court?.rotationMode === "FAIR_PLAY" ? "Fair Play" : "Winner Stays"}
+      </p>
+      <p className="text-sm font-medium">
+        {a.teamA.playerIds.map(getName).join(" + ")}
+      </p>
+      <p className="text-xs text-gray-400 text-center">vs</p>
+      <p className="text-sm font-medium">
+        {a.teamB.playerIds.map(getName).join(" + ")}
+      </p>
+    </div>
+  );
+})}
         </Card>
       )}
     </div>

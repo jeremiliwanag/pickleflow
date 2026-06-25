@@ -1,0 +1,230 @@
+import type { Session } from "../../types";
+import { getSessionFairnessScore } from "../../engine/fairness";
+import PlayerCard from "./PlayerCard";
+import Button from "./Button";
+
+interface SidebarProps {
+  session: Session;
+  onPause: () => void;
+  onResume: () => void;
+  onEnd: () => void;
+  onPlayerStatusChange: (
+    playerId: string,
+    status: "PRESENT" | "RESTING" | "LEFT"
+  ) => void;
+}
+
+export default function Sidebar({
+  session,
+  onPause,
+  onResume,
+  onEnd,
+  onPlayerStatusChange,
+}: SidebarProps) {
+  const fairness = getSessionFairnessScore(session);
+
+  const paidCount = session.players.filter(
+    (p) => p.payment.status === "PAID"
+  ).length;
+  const unpaidCount = session.players.length - paidCount;
+
+  const waitingPlayers = session.players.filter(
+    (p) =>
+      p.attendanceStatus === "WAITING" ||
+      p.attendanceStatus === "PRESENT"
+  );
+
+  const restingPlayers = session.players.filter(
+    (p) => p.attendanceStatus === "RESTING"
+  );
+
+  const leftPlayers = session.players.filter(
+    (p) => p.attendanceStatus === "LEFT"
+  );
+
+  const playingPlayers = session.players.filter(
+    (p) => p.attendanceStatus === "PLAYING"
+  );
+
+  const fairnessColor =
+    fairness >= 90
+      ? "text-emerald-300"
+      : fairness >= 70
+      ? "text-yellow-300"
+      : "text-red-300";
+
+  return (
+    <div className="w-80 min-h-screen bg-green-900 text-white flex flex-col flex-shrink-0">
+      <div className="p-5 border-b border-green-700">
+        <h1 className="text-2xl font-black tracking-tight text-white">
+          PickleFlow
+        </h1>
+        <p className="text-green-300 text-sm mt-0.5">{session.name}</p>
+        <span className="text-xs bg-green-600 text-white px-3 py-1 rounded-full mt-2 inline-block font-semibold tracking-wide">
+          {session.state}
+        </span>
+      </div>
+
+      <div className="p-5 border-b border-green-700">
+        <p className="text-green-400 text-xs font-semibold uppercase tracking-widest mb-1">
+          Fairness Score
+        </p>
+        <p className={`text-6xl font-black leading-none ${fairnessColor}`}>
+          {fairness}%
+        </p>
+        <p className="text-green-400 text-sm mt-2">
+          Round {session.currentRound}
+        </p>
+      </div>
+
+      <div className="p-5 border-b border-green-700">
+        <p className="text-green-400 text-xs font-semibold uppercase tracking-widest mb-3">
+          Players
+        </p>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="bg-green-800 rounded-xl p-2">
+            <p className="text-xl font-black text-white">
+              {session.players.length}
+            </p>
+            <p className="text-green-400 text-xs">Total</p>
+          </div>
+          <div className="bg-green-800 rounded-xl p-2">
+            <p className="text-xl font-black text-emerald-300">
+              {playingPlayers.length}
+            </p>
+            <p className="text-green-400 text-xs">Playing</p>
+          </div>
+          <div className="bg-green-800 rounded-xl p-2">
+            <p className="text-xl font-black text-yellow-300">
+              {waitingPlayers.length}
+            </p>
+            <p className="text-green-400 text-xs">Waiting</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-5 border-b border-green-700">
+        <p className="text-green-400 text-xs font-semibold uppercase tracking-widest mb-3">
+          Payments
+        </p>
+        <div className="space-y-1.5">
+          <div className="flex justify-between items-center">
+            <span className="text-green-300 text-sm">Paid</span>
+            <span className="font-bold text-emerald-300 text-sm">
+              {paidCount} / {session.players.length}
+            </span>
+          </div>
+          {unpaidCount > 0 && (
+            <div className="flex justify-between items-center">
+              <span className="text-green-300 text-sm">Outstanding</span>
+              <span className="font-bold text-yellow-300 text-sm">
+                {unpaidCount}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="p-5 flex-1 overflow-hidden flex flex-col gap-4">
+        <div className="flex-1 overflow-y-auto flex flex-col gap-2">
+          <p className="text-green-400 text-xs font-semibold uppercase tracking-widest mb-1">
+            Waiting Queue ({waitingPlayers.length})
+          </p>
+          {waitingPlayers.map((player) => (
+            <PlayerCard
+              key={player.id}
+              player={player}
+              compact
+              showStatus
+              onStatusChange={(status) =>
+                onPlayerStatusChange(
+                  player.id,
+                  status as "PRESENT" | "RESTING" | "LEFT"
+                )
+              }
+            />
+          ))}
+          {waitingPlayers.length === 0 && (
+            <p className="text-green-600 text-sm italic">
+              All players are on court
+            </p>
+          )}
+        </div>
+
+        {restingPlayers.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="text-green-400 text-xs font-semibold uppercase tracking-widest mb-1">
+              Resting ({restingPlayers.length})
+            </p>
+            {restingPlayers.map((player) => (
+              <PlayerCard
+                key={player.id}
+                player={player}
+                compact
+                showStatus
+                onStatusChange={(status) =>
+                  onPlayerStatusChange(
+                    player.id,
+                    status as "PRESENT" | "RESTING" | "LEFT"
+                  )
+                }
+              />
+            ))}
+          </div>
+        )}
+
+        {leftPlayers.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="text-green-400 text-xs font-semibold uppercase tracking-widest mb-1">
+              Left ({leftPlayers.length})
+            </p>
+            {leftPlayers.map((player) => (
+              <div
+                key={player.id}
+                className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/10 opacity-60"
+              >
+                <div className="flex-1">
+                  <p className="font-bold text-white text-sm">
+                    {player.name}
+                  </p>
+                  <p className="text-green-400 text-xs">Left session</p>
+                </div>
+                <button
+                  onClick={() =>
+                    onPlayerStatusChange(player.id, "PRESENT")
+                  }
+                  className="text-xs px-2 py-1 rounded-lg border border-emerald-400 text-emerald-300 hover:bg-emerald-800 transition-colors font-semibold"
+                >
+                  Rejoin
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="p-5 border-t border-green-700 flex flex-col gap-2">
+        {session.state === "ACTIVE" ? (
+          <Button
+            label="Pause Session"
+            onClick={onPause}
+            variant="secondary"
+            fullWidth
+          />
+        ) : (
+          <Button
+            label="Resume Session"
+            onClick={onResume}
+            fullWidth
+          />
+        )}
+        <Button
+          label="End Session"
+          onClick={onEnd}
+          variant="danger"
+          fullWidth
+        />
+      </div>
+    </div>
+  );
+}

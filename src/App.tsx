@@ -1,7 +1,7 @@
 import { useState } from "react";
 import SessionSetup from "./components/screens/SessionSetup";
 import PlayerRoster from "./components/screens/PlayerRoster";
-import Dashboard from "./components/screens/Dashboard";
+import MainDashboard from "./components/screens/MainDashboard";
 
 type Screen = "setup" | "roster" | "dashboard";
 
@@ -19,9 +19,7 @@ export default function App() {
           onBack={() => setScreen("setup")}
         />
       )}
-      {screen === "dashboard" && (
-        <Dashboard onBack={() => setScreen("setup")} />
-      )}
+      {screen === "dashboard" && <MainDashboard />}
     </div>
   );
 }
