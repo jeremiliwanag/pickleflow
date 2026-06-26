@@ -5,6 +5,7 @@
 
 import { create } from "zustand";
 import { subscribeToPlayers, savePlayer, updatePlayer, deletePlayer } from "../db/playerDB";
+
 import type { Player, SkillTier, CommunityRating } from "../types";
 import type { Unsubscribe } from "firebase/firestore";
 
@@ -71,7 +72,38 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     // Cancel any existing subscription first
     get()._unsubscribe?.();
     set({ loading: true, error: null });
-    const unsub = subscribeToPlayers((players) => {
+    const unsub = subscribeToPlayers(async (players) => {
+      // Auto-deduplicate: two players are duplicates only when BOTH
+      // name AND self-rating (tier + division) match — same name at
+      // different skill levels = different people, keep both.
+      const byFingerprint = new Map<string, Player[]>();
+      for (const p of players) {
+        const key = [
+          p.name.trim().toLowerCase(),
+          p.ratings.self.tier,
+          p.ratings.self.division.toFixed(1),
+        ].join("|");
+        byFingerprint.set(key, [...(byFingerprint.get(key) ?? []), p]);
+      }
+      const toDelete: string[] = [];
+      for (const group of byFingerprint.values()) {
+        if (group.length < 2) continue;
+        // Keep the richest copy: photo > most community ratings > earliest joined
+        const scored = group.map((p) => ({
+          p,
+          score:
+            (p.photoURL ? 10 : 0) +
+            (p.ratings.community?.length ?? 0) -
+            (p.joinedAt ?? 0) / 1e12,
+        }));
+        scored.sort((a, b) => b.score - a.score);
+        for (let i = 1; i < scored.length; i++) toDelete.push(scored[i].p.id);
+      }
+      if (toDelete.length > 0) {
+        await Promise.all(toDelete.map((id) => deletePlayer(id)));
+        // onSnapshot will fire again with the cleaned list — no need to set here
+        return;
+      }
       set({ roster: players, loading: false });
     });
     set({ _unsubscribe: unsub });
@@ -83,9 +115,12 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   },
 
   addToRoster: async (name, tier, division) => {
-    // Don't create a duplicate if this name already exists in the roster
+    // Don't create a duplicate if same name AND same rating already exists
     const existing = get().roster.find(
-      (p) => p.name.trim().toLowerCase() === name.trim().toLowerCase()
+      (p) =>
+        p.name.trim().toLowerCase() === name.trim().toLowerCase() &&
+        p.ratings.self.tier === tier &&
+        p.ratings.self.division === division
     );
     if (existing) return;
 

@@ -147,10 +147,16 @@ export function getPlayerPriorityScore(
   const waitScore = Math.min(waitMinutes / 30, 1) * WEIGHTS.waitTime;
 
   // Consecutive games -- more consecutive = lower priority
-  const consecutiveScore =
-    Math.max(0, 1 - player.consecutiveGames * 0.5) * WEIGHTS.consecutive;
+  // BUT: catch-up players ignore this penalty and get a massive boost instead
+  const catchUp = (player.catchUpGames ?? 0) > 0;
+  const consecutiveScore = catchUp
+    ? WEIGHTS.consecutive // full score — no penalty
+    : Math.max(0, 1 - player.consecutiveGames * 0.5) * WEIGHTS.consecutive;
 
-  return gamesScore + waitScore + consecutiveScore;
+  // Catch-up bonus: overrides normal scheduling to slot them in next
+  const catchUpBonus = catchUp ? 200 : 0;
+
+  return gamesScore + waitScore + consecutiveScore + catchUpBonus;
 }
 
 // ============================================

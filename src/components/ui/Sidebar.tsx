@@ -18,6 +18,7 @@ interface SidebarProps {
     playerId: string,
     status: "PRESENT" | "RESTING" | "LEFT"
   ) => void;
+  onCatchUp: (playerId: string) => void;
   onAddPlayer: (
     name: string,
     tier: SkillTier,
@@ -44,6 +45,7 @@ export default function Sidebar({
   onResume,
   onEnd,
   onPlayerStatusChange,
+  onCatchUp,
   onAddPlayer,
   onDeletePlayer,
   onAddCommunityRating,
@@ -387,6 +389,22 @@ export default function Sidebar({
                   )
                 }
               />
+              {/* Catch Up button — shown on hover for waiting players */}
+              <div className="absolute top-1 right-6 opacity-0 group-hover:opacity-100 transition-all flex gap-1">
+                {(player.catchUpGames ?? 0) === 0 ? (
+                  <button
+                    title="Give this player 2 priority games to catch up"
+                    onClick={() => onCatchUp(player.id)}
+                    className="text-xs bg-amber-400 hover:bg-amber-500 text-white px-2 h-5 rounded-full font-bold"
+                  >
+                    ⚡ Catch Up
+                  </button>
+                ) : (
+                  <span className="text-xs bg-amber-400 text-white px-2 h-5 rounded-full font-bold flex items-center">
+                    ⚡ {player.catchUpGames} left
+                  </span>
+                )}
+              </div>
               <button
                 onClick={() => setConfirmDeleteId(player.id)}
                 className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-xs bg-red-500 hover:bg-red-600 text-white w-5 h-5 rounded-full flex items-center justify-center transition-all"

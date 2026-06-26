@@ -165,6 +165,9 @@ export default function MainDashboard() {
           await updatePlayerPhoto(playerId, photoURL);
           updateSessionPlayer(playerId, { photoURL });
         }}
+        onCatchUp={(playerId) => {
+          updateSessionPlayer(playerId, { catchUpGames: 2 });
+        }}
         onUpdateSelfRating={async (playerId, tier, division) => {
           await updateRating(playerId, "self", tier, division);
           const { roster } = usePlayerStore.getState();

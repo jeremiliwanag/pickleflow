@@ -140,6 +140,7 @@ export interface Player {
   winStreak?: number;
   waitingSince: number | null; // timestamp in ms
   consecutiveGames: number;
+  catchUpGames?: number; // remaining priority-boost games for late joiners
   partners: string[]; // player IDs played with
   opponents: string[]; // player IDs played against
   joinedAt: number; // timestamp in ms

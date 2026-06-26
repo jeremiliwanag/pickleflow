@@ -429,6 +429,7 @@ export function recordMatchResult(
       result === "TEAM_A" ? match.teamB.playerIds : match.teamA.playerIds;
 
     const isWinner = winningIds.has(player.id);
+    const catchUpGames = Math.max(0, (player.catchUpGames ?? 0) - 1);
     return {
       ...player,
       gamesPlayed: player.gamesPlayed + 1,
@@ -436,6 +437,7 @@ export function recordMatchResult(
       winStreak: isWinner ? (player.winStreak ?? 0) + 1 : 0,
       attendanceStatus: "PRESENT" as const,
       waitingSince: currentTime,
+      catchUpGames,
       partners: [...player.partners, ...teammates],
       opponents: [...player.opponents, ...opponents],
     };
