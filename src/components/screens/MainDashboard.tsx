@@ -26,6 +26,7 @@ export default function MainDashboard() {
   const addCommunityRating = usePlayerStore((s) => s.addCommunityRating);
   const updatePlayerPhoto = usePlayerStore((s) => s.updatePlayerPhoto);
   const updateRating = usePlayerStore((s) => s.updateRating);
+  const addToRoster = usePlayerStore((s) => s.addToRoster);
   const updateSessionPlayer = useSessionStore((s) => s.updatePlayer);
 
   const [_replacing, setReplacing] = useState<string | null>(null);
@@ -88,6 +89,8 @@ export default function MainDashboard() {
       partners: [],
       opponents: [],
     });
+    // Also save to permanent roster so they appear in the Roster Manager
+    void addToRoster(name, tier, division);
   };
 
   const handleEnd = async () => {

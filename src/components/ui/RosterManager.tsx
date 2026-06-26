@@ -4,13 +4,7 @@ import type { SkillTier, Player } from "../../types";
 import { formatSkillRating, getActiveRating } from "../../types";
 import PlayerStatsModal from "./PlayerStatsModal";
 
-const TIERS: SkillTier[] = [
-  "BEGINNER",
-  "NOVICE",
-  "INTERMEDIATE",
-  "ADVANCED",
-  "ELITE",
-];
+const TIERS: SkillTier[] = ["BEGINNER", "NOVICE", "INTERMEDIATE", "ADVANCED", "ELITE"];
 
 const TIER_LABELS: Record<SkillTier, string> = {
   BEGINNER: "Beginner",
@@ -20,41 +14,42 @@ const TIER_LABELS: Record<SkillTier, string> = {
   ELITE: "Elite",
 };
 
-const TIER_BADGE: Record<SkillTier, string> = {
-  BEGINNER: "bg-gray-100 text-gray-700 border-gray-300",
-  NOVICE: "bg-blue-100 text-blue-800 border-blue-300",
-  INTERMEDIATE: "bg-yellow-100 text-yellow-800 border-yellow-300",
-  ADVANCED: "bg-orange-100 text-orange-800 border-orange-300",
-  ELITE: "bg-red-100 text-red-800 border-red-300",
+const TIER_COLORS: Record<SkillTier, { badge: string; bar: string; glow: string }> = {
+  BEGINNER:     { badge: "bg-slate-100 text-slate-700 border-slate-300",      bar: "bg-slate-400",   glow: "shadow-slate-200" },
+  NOVICE:       { badge: "bg-blue-100 text-blue-800 border-blue-300",          bar: "bg-blue-500",    glow: "shadow-blue-200" },
+  INTERMEDIATE: { badge: "bg-yellow-100 text-yellow-800 border-yellow-300",    bar: "bg-yellow-500",  glow: "shadow-yellow-200" },
+  ADVANCED:     { badge: "bg-orange-100 text-orange-800 border-orange-300",    bar: "bg-orange-500",  glow: "shadow-orange-200" },
+  ELITE:        { badge: "bg-red-100 text-red-800 border-red-300",             bar: "bg-red-500",     glow: "shadow-red-200" },
 };
 
 const AVATAR_COLORS = [
-  "bg-emerald-500",
-  "bg-blue-600",
-  "bg-violet-600",
-  "bg-orange-500",
-  "bg-pink-600",
-  "bg-teal-600",
-  "bg-rose-600",
-  "bg-indigo-600",
-  "bg-amber-500",
-  "bg-cyan-600",
+  "from-emerald-400 to-emerald-600",
+  "from-blue-400 to-blue-600",
+  "from-violet-400 to-violet-600",
+  "from-orange-400 to-orange-600",
+  "from-pink-400 to-pink-600",
+  "from-teal-400 to-teal-600",
+  "from-rose-400 to-rose-600",
+  "from-indigo-400 to-indigo-600",
+  "from-amber-400 to-amber-600",
+  "from-cyan-400 to-cyan-600",
 ];
 
 function getAvatarColor(name: string): string {
-  const index =
-    name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) %
-    AVATAR_COLORS.length;
+  const index = name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) % AVATAR_COLORS.length;
   return AVATAR_COLORS[index];
 }
 
 function getInitials(name: string): string {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
+  return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+}
+
+// Skill level as 0–100% for the progress bar (1.0–5.0 across all tiers mapped to 0–100)
+const TIER_BASE: Record<SkillTier, number> = {
+  BEGINNER: 0, NOVICE: 20, INTERMEDIATE: 40, ADVANCED: 60, ELITE: 80,
+};
+function skillPercent(tier: SkillTier, division: number): number {
+  return Math.round(TIER_BASE[tier] + ((division - 1) / 4) * 20);
 }
 
 interface RosterManagerProps {
@@ -66,7 +61,7 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
     usePlayerStore();
 
   const [search, setSearch] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [statsPlayer, setStatsPlayer] = useState<Player | null>(null);
@@ -82,58 +77,44 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
   const [newDivision, setNewDivision] = useState(1.0);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadRoster();
-  }, []);
+  useEffect(() => { loadRoster(); }, []);
 
   const filtered = roster.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const startEdit = (playerId: string) => {
-    const player = roster.find((p) => p.id === playerId);
-    if (!player) return;
+  const openEdit = (player: Player) => {
     const rating = getActiveRating(player.ratings);
     setEditName(player.name);
     setEditTier(rating.tier);
     setEditDivision(rating.division);
-    setEditingId(playerId);
+    setEditingPlayer(player);
     setShowAddForm(false);
   };
 
-  const cancelEdit = () => setEditingId(null);
-
   const saveEdit = async () => {
-    if (!editingId || !editName.trim()) return;
+    if (!editingPlayer || !editName.trim()) return;
     setSaving(true);
-    const player = roster.find((p) => p.id === editingId);
-    if (player) {
-      await updateRosterPlayer(editingId, {
-        name: editName.trim(),
-        ratings: {
-          ...player.ratings,
-          self: { tier: editTier, division: editDivision },
-        },
-      });
-    }
+    await updateRosterPlayer(editingPlayer.id, {
+      name: editName.trim(),
+      ratings: { ...editingPlayer.ratings, self: { tier: editTier, division: editDivision } },
+    });
     setSaving(false);
-    setEditingId(null);
+    setEditingPlayer(null);
   };
 
   const handleDelete = async () => {
     if (!deleteConfirmId) return;
     await removeFromRoster(deleteConfirmId);
     setDeleteConfirmId(null);
-    if (editingId === deleteConfirmId) setEditingId(null);
+    if (editingPlayer?.id === deleteConfirmId) setEditingPlayer(null);
   };
 
   const handleAdd = async () => {
     if (!newName.trim()) return;
     setSaving(true);
     await addToRoster(newName.trim(), newTier, newDivision);
-    setNewName("");
-    setNewTier("BEGINNER");
-    setNewDivision(1.0);
+    setNewName(""); setNewTier("BEGINNER"); setNewDivision(1.0);
     setSaving(false);
     setShowAddForm(false);
   };
@@ -141,38 +122,29 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
   const playerToDelete = roster.find((p) => p.id === deleteConfirmId);
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
 
-      {/* Player Stats Modal */}
+      {/* Sub-modals */}
       {statsPlayer && (
         <PlayerStatsModal player={statsPlayer} onClose={() => setStatsPlayer(null)} />
       )}
 
-      {/* Delete Confirm */}
       {deleteConfirmId && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]">
           <div className="bg-white rounded-2xl p-6 mx-4 max-w-sm w-full shadow-2xl">
-            <h3 className="font-black text-gray-900 text-lg mb-1">
-              Delete Player?
-            </h3>
+            <h3 className="font-black text-gray-900 text-lg mb-1">Delete Player?</h3>
             <p className="text-gray-500 text-sm mb-5">
               Permanently remove{" "}
-              <span className="font-bold text-gray-900">
-                {playerToDelete?.name}
-              </span>{" "}
+              <span className="font-bold text-gray-900">{playerToDelete?.name}</span>{" "}
               from the roster? This cannot be undone.
             </p>
             <div className="flex gap-3">
-              <button
-                onClick={handleDelete}
-                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-sm transition-colors"
-              >
+              <button onClick={handleDelete}
+                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-sm transition-colors">
                 Yes, Delete
               </button>
-              <button
-                onClick={() => setDeleteConfirmId(null)}
-                className="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 font-black text-sm transition-colors"
-              >
+              <button onClick={() => setDeleteConfirmId(null)}
+                className="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 font-black text-sm transition-colors">
                 Cancel
               </button>
             </div>
@@ -180,303 +152,238 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col">
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <div>
-            <h2 className="font-black text-gray-900 text-xl">Player Roster</h2>
-            <p className="text-gray-400 text-xs mt-0.5">
-              {roster.length} player{roster.length !== 1 ? "s" : ""} saved
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                setShowAddForm((v) => !v);
-                setEditingId(null);
-              }}
-              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm transition-colors"
-            >
-              + New Player
-            </button>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 text-xl font-bold transition-colors"
-            >
-              ×
-            </button>
-          </div>
-        </div>
-
-        {/* Add Player Form */}
-        {showAddForm && (
-          <div className="px-6 py-4 bg-emerald-50 border-b border-emerald-100">
-            <p className="text-xs font-semibold text-emerald-700 uppercase tracking-widest mb-3">
-              New Player
-            </p>
-            <div className="flex flex-col gap-3">
+      {/* Edit / Add slide-up modal */}
+      {(editingPlayer || showAddForm) && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[55] p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <h3 className="font-black text-gray-900 text-lg mb-4">
+              {editingPlayer ? `Edit — ${editingPlayer.name}` : "Add New Player"}
+            </h3>
+            <div className="space-y-4">
               <input
                 type="text"
                 placeholder="Player name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
+                value={editingPlayer ? editName : newName}
+                onChange={(e) =>
+                  editingPlayer ? setEditName(e.target.value) : setNewName(e.target.value)
+                }
                 autoFocus
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:border-emerald-500"
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:border-emerald-500"
               />
-              <div className="flex flex-wrap gap-1.5">
-                {TIERS.map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setNewTier(t)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold border-2 transition-colors ${
-                      newTier === t
-                        ? "border-emerald-600 bg-emerald-600 text-white"
-                        : "border-gray-200 text-gray-600 hover:border-gray-300"
-                    }`}
-                  >
-                    {TIER_LABELS[t]}
-                  </button>
-                ))}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Tier</p>
+                <div className="flex flex-wrap gap-2">
+                  {TIERS.map((t) => {
+                    const active = editingPlayer ? editTier === t : newTier === t;
+                    return (
+                      <button key={t}
+                        onClick={() => editingPlayer ? setEditTier(t) : setNewTier(t)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 transition-colors ${
+                          active
+                            ? "border-emerald-600 bg-emerald-600 text-white"
+                            : "border-gray-200 text-gray-600 hover:border-gray-300"
+                        }`}>
+                        {TIER_LABELS[t]}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div>
                 <div className="flex justify-between text-xs text-gray-500 mb-1">
                   <span>Division</span>
-                  <span className="font-semibold text-emerald-600">
-                    {formatSkillRating({ tier: newTier, division: newDivision })}
+                  <span className="font-bold text-emerald-600">
+                    {formatSkillRating({
+                      tier: editingPlayer ? editTier : newTier,
+                      division: editingPlayer ? editDivision : newDivision,
+                    })}
                   </span>
                 </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={5}
-                  step={0.1}
-                  value={newDivision}
-                  onChange={(e) => setNewDivision(parseFloat(e.target.value))}
+                <input type="range" min={1} max={5} step={0.1}
+                  value={editingPlayer ? editDivision : newDivision}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    editingPlayer ? setEditDivision(v) : setNewDivision(v);
+                  }}
                   className="w-full accent-emerald-600"
                 />
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 pt-1">
                 <button
-                  onClick={handleAdd}
-                  disabled={!newName.trim() || saving}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm transition-colors disabled:opacity-50"
-                >
-                  {saving ? "Saving…" : "Add to Roster"}
+                  onClick={editingPlayer ? saveEdit : handleAdd}
+                  disabled={saving || !(editingPlayer ? editName.trim() : newName.trim())}
+                  className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm transition-colors disabled:opacity-50">
+                  {saving ? "Saving…" : editingPlayer ? "Save Changes" : "Add to Roster"}
                 </button>
+                {editingPlayer && (
+                  <button onClick={() => setDeleteConfirmId(editingPlayer.id)}
+                    className="px-4 py-3 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-bold text-sm border-2 border-red-100 transition-colors">
+                    Delete
+                  </button>
+                )}
                 <button
-                  onClick={() => setShowAddForm(false)}
-                  className="px-4 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-sm transition-colors"
-                >
+                  onClick={() => { setEditingPlayer(null); setShowAddForm(false); }}
+                  className="px-4 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-sm transition-colors">
                   Cancel
                 </button>
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Search */}
-        <div className="px-6 py-3 border-b border-gray-100">
-          <input
-            type="text"
-            placeholder="Search players…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full border-2 border-gray-200 rounded-xl px-4 py-2 text-sm text-gray-900 bg-gray-50 focus:outline-none focus:border-emerald-500 focus:bg-white transition-colors"
-          />
+      {/* Main panel — 90vw × 90vh grid */}
+      <div className="bg-gray-50 rounded-3xl shadow-2xl w-[92vw] h-[90vh] flex flex-col overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-8 py-5 bg-white border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h2 className="font-black text-gray-900 text-2xl tracking-tight">Player Roster</h2>
+            <p className="text-gray-400 text-sm mt-0.5">
+              {roster.length} player{roster.length !== 1 ? "s" : ""} · click a card to edit
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              placeholder="Search players…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-56 border-2 border-gray-200 rounded-xl px-4 py-2 text-sm text-gray-900 bg-gray-50 focus:outline-none focus:border-emerald-500 focus:bg-white transition-colors"
+            />
+            <button
+              onClick={() => { setShowAddForm(true); setEditingPlayer(null); }}
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm transition-colors whitespace-nowrap"
+            >
+              + New Player
+            </button>
+            <button onClick={onClose}
+              className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 text-2xl font-bold transition-colors">
+              ×
+            </button>
+          </div>
         </div>
 
-        {/* Player List */}
-        <div className="flex-1 overflow-y-auto">
+        {/* Grid */}
+        <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
-            <div className="flex items-center justify-center h-32">
+            <div className="flex items-center justify-center h-full">
               <p className="text-gray-400 text-sm">Loading roster…</p>
             </div>
           ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-32 gap-2">
+            <div className="flex flex-col items-center justify-center h-full gap-3">
               <p className="text-gray-400 text-sm font-medium">
                 {search ? "No players match your search" : "No players in roster yet"}
               </p>
               {!search && (
-                <button
-                  onClick={() => setShowAddForm(true)}
-                  className="text-emerald-600 font-bold text-sm hover:underline"
-                >
+                <button onClick={() => setShowAddForm(true)}
+                  className="text-emerald-600 font-bold text-sm hover:underline">
                   Add your first player
                 </button>
               )}
             </div>
           ) : (
-            <ul className="divide-y divide-gray-50">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {filtered.map((player) => {
                 const rating = getActiveRating(player.ratings);
                 const communityCount = player.ratings.community?.length ?? 0;
-                const isEditing = editingId === player.id;
+                const winRate = player.gamesPlayed > 0
+                  ? Math.round((player.gamesWon / player.gamesPlayed) * 100)
+                  : null;
+                const pct = skillPercent(rating.tier, rating.division);
+                const colors = TIER_COLORS[rating.tier];
 
                 return (
-                  <li key={player.id}>
-                    {/* Row */}
-                    <div
-                      className={`flex items-center gap-4 px-6 py-3 transition-colors ${
-                        isEditing ? "bg-blue-50" : "hover:bg-gray-50 cursor-pointer"
-                      }`}
-                      onClick={() => !isEditing && startEdit(player.id)}
-                    >
-                      {/* Avatar */}
+                  <div
+                    key={player.id}
+                    onClick={() => openEdit(player)}
+                    className={`bg-white rounded-2xl shadow-sm hover:shadow-md ${colors.glow} border border-gray-100 hover:border-emerald-200 cursor-pointer transition-all duration-200 overflow-hidden flex flex-col group`}
+                  >
+                    {/* Avatar area */}
+                    <div className="relative flex flex-col items-center pt-7 pb-4 px-4">
                       {player.photoURL ? (
-                        <img
-                          src={player.photoURL}
-                          alt={player.name}
-                          className="w-11 h-11 rounded-full object-cover flex-shrink-0 shadow-sm"
-                        />
+                        <img src={player.photoURL} alt={player.name}
+                          className="w-20 h-20 rounded-full object-cover shadow-lg ring-4 ring-white" />
                       ) : (
-                        <div
-                          className={`${getAvatarColor(
-                            player.name
-                          )} w-11 h-11 rounded-full flex items-center justify-center text-white font-black text-sm flex-shrink-0 shadow-sm`}
-                        >
+                        <div className={`bg-gradient-to-br ${getAvatarColor(player.name)} w-20 h-20 rounded-full flex items-center justify-center text-white font-black text-2xl shadow-lg ring-4 ring-white`}>
                           {getInitials(player.name)}
                         </div>
                       )}
 
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <p className="font-black text-gray-900 text-sm leading-tight">
-                          {player.name}
-                        </p>
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full font-semibold border ${
-                              TIER_BADGE[rating.tier]
-                            }`}
-                          >
-                            {formatSkillRating(rating)}
-                          </span>
-                          {communityCount > 0 && (
-                            <span className="text-xs text-gray-400">
-                              {communityCount} community rating{communityCount !== 1 ? "s" : ""}
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                      {/* Win streak badge */}
+                      {(player.winStreak ?? 0) >= 3 && (
+                        <span className="absolute top-4 right-4 text-xs bg-orange-500 text-white px-1.5 py-0.5 rounded-full font-black shadow">
+                          🔥{player.winStreak}
+                        </span>
+                      )}
+                    </div>
 
-                      {/* Action buttons */}
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        {!isEditing && (
-                          <>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setStatsPlayer(player);
-                              }}
-                              className="text-xs px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-purple-100 text-gray-600 hover:text-purple-700 font-semibold transition-colors"
-                            >
-                              Stats
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                startEdit(player.id);
-                              }}
-                              className="text-xs px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-700 font-semibold transition-colors"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDeleteConfirmId(player.id);
-                              }}
-                              className="text-xs px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 font-semibold transition-colors"
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
-                        {isEditing && (
-                          <span className="text-xs text-blue-500 font-semibold">
-                            Editing…
-                          </span>
-                        )}
+                    {/* Name + rating */}
+                    <div className="px-4 pb-3 text-center">
+                      <p className="font-black text-gray-900 text-sm leading-tight truncate">{player.name}</p>
+                      <span className={`inline-block mt-1.5 text-xs px-2.5 py-0.5 rounded-full font-bold border ${colors.badge}`}>
+                        {formatSkillRating(rating)}
+                      </span>
+                      {communityCount > 0 && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          {communityCount} community rating{communityCount !== 1 ? "s" : ""}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Skill bar */}
+                    <div className="px-4 pb-3">
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full ${colors.bar} rounded-full transition-all`}
+                          style={{ width: `${pct}%` }}
+                        />
                       </div>
                     </div>
 
-                    {/* Inline Edit Form */}
-                    {isEditing && (
-                      <div className="px-6 pb-4 bg-blue-50 border-b border-blue-100">
-                        <div className="flex flex-col gap-3 pt-1">
-                          <input
-                            type="text"
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
-                            autoFocus
-                            className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:border-blue-500"
-                          />
-                          <div className="flex flex-wrap gap-1.5">
-                            {TIERS.map((t) => (
-                              <button
-                                key={t}
-                                onClick={() => setEditTier(t)}
-                                className={`px-3 py-1 rounded-lg text-xs font-bold border-2 transition-colors ${
-                                  editTier === t
-                                    ? "border-blue-600 bg-blue-600 text-white"
-                                    : "border-gray-200 text-gray-600 hover:border-gray-300 bg-white"
-                                }`}
-                              >
-                                {TIER_LABELS[t]}
-                              </button>
-                            ))}
-                          </div>
-                          <div>
-                            <div className="flex justify-between text-xs text-gray-500 mb-1">
-                              <span>Division</span>
-                              <span className="font-semibold text-blue-600">
-                                {formatSkillRating({
-                                  tier: editTier,
-                                  division: editDivision,
-                                })}
-                              </span>
-                            </div>
-                            <input
-                              type="range"
-                              min={1}
-                              max={5}
-                              step={0.1}
-                              value={editDivision}
-                              onChange={(e) =>
-                                setEditDivision(parseFloat(e.target.value))
-                              }
-                              className="w-full accent-blue-600"
-                            />
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={saveEdit}
-                              disabled={!editName.trim() || saving}
-                              className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-sm transition-colors disabled:opacity-50"
-                            >
-                              {saving ? "Saving…" : "Save Changes"}
-                            </button>
-                            <button
-                              onClick={cancelEdit}
-                              className="px-4 py-2.5 rounded-xl bg-white border-2 border-gray-200 hover:border-gray-300 text-gray-700 font-bold text-sm transition-colors"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              onClick={() => setDeleteConfirmId(player.id)}
-                              className="px-4 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-bold text-sm transition-colors border-2 border-red-100"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
+                    {/* Stats row */}
+                    <div className="border-t border-gray-50 grid grid-cols-3 divide-x divide-gray-50 mt-auto">
+                      <div className="py-3 text-center">
+                        <p className="text-sm font-black text-gray-900">{player.gamesPlayed}</p>
+                        <p className="text-xs text-gray-400 leading-tight">Played</p>
                       </div>
-                    )}
-                  </li>
+                      <div className="py-3 text-center">
+                        <p className="text-sm font-black text-emerald-600">{player.gamesWon}</p>
+                        <p className="text-xs text-gray-400 leading-tight">Wins</p>
+                      </div>
+                      <div className="py-3 text-center">
+                        <p className="text-sm font-black text-gray-900">
+                          {winRate !== null ? `${winRate}%` : "—"}
+                        </p>
+                        <p className="text-xs text-gray-400 leading-tight">Win %</p>
+                      </div>
+                    </div>
+
+                    {/* Hover action strip */}
+                    <div className="border-t border-gray-50 flex divide-x divide-gray-50 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setStatsPlayer(player); }}
+                        className="flex-1 py-2 text-xs font-bold text-purple-600 hover:bg-purple-50 transition-colors"
+                      >
+                        Stats
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openEdit(player); }}
+                        className="flex-1 py-2 text-xs font-bold text-blue-600 hover:bg-blue-50 transition-colors"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(player.id); }}
+                        className="flex-1 py-2 text-xs font-bold text-red-500 hover:bg-red-50 transition-colors"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
                 );
               })}
-            </ul>
+            </div>
           )}
         </div>
       </div>
