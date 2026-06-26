@@ -510,43 +510,78 @@ addPlayer: (playerData) => {
     const { session } = get();
     if (!session) return;
 
-    const updatedPlayers = recordMatchResult(
-      session,
-      match,
-      result,
-      Date.now()
-    );
+    const now = Date.now();
 
-    const completedMatch: Match = {
-      ...match,
-      result,
-      scoreA,
-      scoreB,
-      endTime: Date.now(),
-    };
+    // Update player stats (gamesPlayed, gamesWon, partners, opponents, consecutiveGames, etc.)
+    const statsUpdatedPlayers = recordMatchResult(session, match, result, now);
+
+    const completedMatch: Match = { ...match, result, scoreA, scoreB, endTime: now };
+
+    // Find the court for this match
+    const thisCourt = session.courts.find((c) => c.currentMatch?.id === match.id);
+    const pa = thisCourt?.pendingAssignment ?? null;
+
+    // If there's a pending next match, auto-start it
+    let newCurrentMatch: Match | null = null;
+    let playersAfterAutoStart = statsUpdatedPlayers;
+
+    if (pa) {
+      const assignedIds = new Set([...pa.teamA.playerIds, ...pa.teamB.playerIds]);
+      newCurrentMatch = {
+        id: generateId("match"),
+        courtId: match.courtId,
+        teamA: pa.teamA,
+        teamB: pa.teamB,
+        result: "PENDING",
+        startTime: now,
+        endTime: null,
+        round: session.currentRound + 1,
+      };
+      // Set newly-starting players to PLAYING
+      playersAfterAutoStart = statsUpdatedPlayers.map((p) =>
+        assignedIds.has(p.id)
+          ? {
+              ...p,
+              attendanceStatus: "PLAYING" as const,
+              consecutiveGames: p.consecutiveGames + 1,
+              waitingSince: null,
+            }
+          : p
+      );
+    }
 
     const updatedCourts = session.courts.map((court) => {
       if (court.currentMatch?.id !== match.id) return court;
       return {
         ...court,
-        currentMatch:
-          null,
+        currentMatch: newCurrentMatch,
+        pendingAssignment: null, // consumed — we'll auto-generate a new one below
       };
     });
 
-    const updated = {
+    const newRound = newCurrentMatch ? session.currentRound + 1 : session.currentRound;
+
+    const updated: Session = {
       ...session,
-      players: updatedPlayers,
+      players: playersAfterAutoStart,
       courts: updatedCourts,
       matchHistory: [...session.matchHistory, completedMatch],
+      currentRound: newRound,
     };
 
     set({ session: updated });
     await updateSession(session.id, {
-      players: updatedPlayers,
+      players: playersAfterAutoStart,
       courts: updatedCourts,
       matchHistory: updated.matchHistory,
+      currentRound: newRound,
     });
+
+    // Auto-generate a new Next Match for this court
+    const courtAfter = updatedCourts.find((c) => c.id === match.courtId);
+    if (courtAfter && !courtAfter.pendingAssignment) {
+      get().generateMatchForCourt(match.courtId);
+    }
   },
 
   // ============================================

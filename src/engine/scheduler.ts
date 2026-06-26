@@ -304,10 +304,207 @@ function scheduleSocial(
 }
 
 // ============================================
+// STAGE 1 — PLAYER SELECTION
+// Decides WHICH four players should play.
+// Rotation mode does NOT influence this stage.
+//
+// Hard rules (never violated):
+//   1. No PLAYING players
+//   2. No players reserved on another court's pending
+//   3. No RESTING or LEFT players
+//   4. No back-to-back for normal players (if enough waiting)
+//
+// Selection order:
+//   1. Priority players (⭐ late arrivals) bypass back-to-back rule
+//   2. Non-consecutive eligible players, ranked by fairness score
+//   3. Consecutive players only if not enough from above
+//   4. Among the top-8 fairest, pick the 4 with smallest skill spread
+// ============================================
+
+function getReservedIds(session: Session, excludeCourtId: string): Set<string> {
+  const ids = new Set<string>();
+  for (const c of session.courts) {
+    if (c.id === excludeCourtId) continue;
+    const pa = c.pendingAssignment ?? null;
+    if (pa) {
+      pa.teamA.playerIds.forEach((id) => ids.add(id));
+      pa.teamB.playerIds.forEach((id) => ids.add(id));
+    }
+  }
+  return ids;
+}
+
+function selectTightestFour(candidates: Player[]): Player[] | null {
+  const n = candidates.length;
+  if (n < 4) return null;
+  if (n === 4) return candidates;
+
+  let bestSpread = Infinity;
+  let best: Player[] | null = null;
+
+  for (let i = 0; i < n - 3; i++) {
+    for (let j = i + 1; j < n - 2; j++) {
+      for (let k = j + 1; k < n - 1; k++) {
+        for (let l = k + 1; l < n; l++) {
+          const group = [candidates[i], candidates[j], candidates[k], candidates[l]];
+          const ratings = group.map(getActiveRating);
+          const spread = Math.max(...ratings) - Math.min(...ratings);
+          if (spread < bestSpread) {
+            bestSpread = spread;
+            best = group;
+          }
+        }
+      }
+    }
+  }
+
+  return best;
+}
+
+function selectFourPlayers(
+  eligible: Player[],
+  session: Session,
+  currentTime: number
+): Player[] | null {
+  if (eligible.length < 4) return null;
+
+  const maxGames = Math.max(...session.players.map((p) => p.gamesPlayed), 1);
+
+  const hasPriority = (p: Player) =>
+    p.priority === true && (p.priorityGamesLeft ?? 0) > 0;
+
+  // Separate into tiers
+  const priorityPlayers = eligible.filter(hasPriority);
+  const restPlayers = eligible.filter(
+    (p) => !hasPriority(p) && p.consecutiveGames === 0
+  );
+  const consecutivePlayers = eligible.filter(
+    (p) => !hasPriority(p) && p.consecutiveGames > 0
+  );
+
+  // Hard back-to-back rule: only include consecutive players if we must
+  const primaryPool = [...priorityPlayers, ...restPlayers];
+  const pool =
+    primaryPool.length >= 4
+      ? primaryPool
+      : [...primaryPool, ...consecutivePlayers];
+
+  if (pool.length < 4) return null;
+
+  // Rank by fairness (priority score handles ⭐, wait time, games played)
+  const ranked = pool
+    .map((p) => ({
+      player: p,
+      score: getPlayerPriorityScore(p, currentTime, maxGames),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  // Take the top 8 most-deserving candidates
+  const candidates = ranked.slice(0, Math.min(8, ranked.length)).map((r) => r.player);
+
+  // Among the fairest candidates, pick 4 with tightest skill spread
+  return selectTightestFour(candidates);
+}
+
+// ============================================
+// STAGE 2 — TEAM PAIRING
+// Given exactly 4 selected players, decide how
+// to split them into two teams of 2.
+// THIS is where rotation mode matters.
+// ============================================
+
+function pairForBalance(four: Player[]): { teamA: Team; teamB: Team } {
+  const splits: [[number, number], [number, number]][] = [
+    [[0, 1], [2, 3]],
+    [[0, 2], [1, 3]],
+    [[0, 3], [1, 2]],
+  ];
+
+  let best = { tA: [four[0], four[1]], tB: [four[2], four[3]], score: -Infinity };
+  for (const [[a0, a1], [b0, b1]] of splits) {
+    const tA = [four[a0], four[a1]];
+    const tB = [four[b0], four[b1]];
+    const score = getTeamBalanceScore(tA, tB);
+    if (score > best.score) best = { tA, tB, score };
+  }
+
+  return {
+    teamA: { playerIds: best.tA.map((p) => p.id) },
+    teamB: { playerIds: best.tB.map((p) => p.id) },
+  };
+}
+
+function pairForVariety(four: Player[]): { teamA: Team; teamB: Team } {
+  const splits: [[number, number], [number, number]][] = [
+    [[0, 1], [2, 3]],
+    [[0, 2], [1, 3]],
+    [[0, 3], [1, 2]],
+  ];
+
+  let best = { tA: [four[0], four[1]], tB: [four[2], four[3]], score: -Infinity };
+  for (const [[a0, a1], [b0, b1]] of splits) {
+    const tA = [four[a0], four[a1]];
+    const tB = [four[b0], four[b1]];
+    const partnerScore =
+      (getPartnerDiversityScore(tA[0], tA[1]) + getPartnerDiversityScore(tB[0], tB[1])) / 2;
+    const opponentScore = getOpponentDiversityScore(tA, tB);
+    const score = partnerScore * 0.6 + opponentScore * 0.4;
+    if (score > best.score) best = { tA, tB, score };
+  }
+
+  return {
+    teamA: { playerIds: best.tA.map((p) => p.id) },
+    teamB: { playerIds: best.tB.map((p) => p.id) },
+  };
+}
+
+function pairWinnersVsWinners(
+  four: Player[],
+  session: Session
+): { teamA: Team; teamB: Team } {
+  const lastWon = (player: Player): boolean => {
+    for (let i = session.matchHistory.length - 1; i >= 0; i--) {
+      const m = session.matchHistory[i];
+      const inA = m.teamA.playerIds.includes(player.id);
+      const inB = m.teamB.playerIds.includes(player.id);
+      if (!inA && !inB) continue;
+      if (m.result === "PENDING") continue;
+      return m.result === "TEAM_A" ? inA : inB;
+    }
+    return false;
+  };
+
+  const winners = four.filter(lastWon);
+  const losers = four.filter((p) => !lastWon(p));
+
+  if (winners.length === 2 && losers.length === 2) {
+    return {
+      teamA: { playerIds: winners.map((p) => p.id) },
+      teamB: { playerIds: losers.map((p) => p.id) },
+    };
+  }
+
+  return pairForBalance(four);
+}
+
+function pairIntoTeams(
+  four: Player[],
+  court: Court,
+  session: Session
+): { teamA: Team; teamB: Team } {
+  if (court.rotationMode === "WINNER_VS_WINNER") {
+    return pairWinnersVsWinners(four, session);
+  }
+  if (court.rotationMode === "SOCIAL") {
+    return pairForVariety(four);
+  }
+  return pairForBalance(four);
+}
+
+// ============================================
 // PER-COURT MATCH GENERATOR
-// Generates a single match for one court.
-// Excludes players currently playing or already
-// assigned to a pending match on another court.
+// Stage 1 selects the fairest four players.
+// Stage 2 pairs them based on this court's mode.
 // ============================================
 
 export function generateMatchForCourt(
@@ -317,30 +514,19 @@ export function generateMatchForCourt(
 ): { teamA: Team; teamB: Team } | null {
   if (session.state !== "ACTIVE") return null;
 
-  const rng = mulberry32(generateSeed());
-
-  // Players in live matches (PENDING result)
   const playingIds = getPlayingPlayerIds(session);
-
-  // Players already assigned to pending assignments on OTHER courts
-  const pendingIds = new Set<string>();
-  for (const c of session.courts) {
-    if (c.id === court.id) continue;
-    const pa = c.pendingAssignment ?? null;
-    if (pa) {
-      pa.teamA.playerIds.forEach((id) => pendingIds.add(id));
-      pa.teamB.playerIds.forEach((id) => pendingIds.add(id));
-    }
-  }
+  const reservedIds = getReservedIds(session, court.id);
 
   const eligible = getEligiblePlayers(session).filter(
-    (p) => !playingIds.has(p.id) && !pendingIds.has(p.id)
+    (p) => !playingIds.has(p.id) && !reservedIds.has(p.id)
   );
 
-  if (eligible.length < 4) return null;
+  // Stage 1: who plays?
+  const four = selectFourPlayers(eligible, session, currentTime);
+  if (!four) return null;
 
-  const mode: ScoringMode = court.rotationMode === "SOCIAL" ? "SOCIAL" : "FAIR_PLAY";
-  return getBestTeamCombo(eligible, session, currentTime, rng, mode);
+  // Stage 2: how are they paired?
+  return pairIntoTeams(four, court, session);
 }
 
 // ============================================

@@ -119,7 +119,7 @@ export default function Sidebar({
   };
 
   return (
-    <div className="w-96 h-screen sticky top-0 z-10 bg-green-900 text-white flex flex-col flex-shrink-0 overflow-hidden">
+    <div className="w-96 h-screen sticky top-0 z-10 bg-green-900 text-white flex flex-col flex-shrink-0 overflow-y-auto">
 
       {/* Player Profile Panel */}
       {profilePlayer && (
@@ -361,7 +361,7 @@ export default function Sidebar({
       </div>
 
       {/* Player Lists */}
-      <div className="p-5 flex-1 overflow-hidden flex flex-col gap-3">
+      <div className="p-5 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <p className="text-green-400 text-xs font-semibold uppercase tracking-widest">
             Waiting ({waitingPlayers.length})
@@ -374,7 +374,7 @@ export default function Sidebar({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto flex flex-col gap-2 pr-1 scrollbar-thin">
+        <div className="flex flex-col gap-2">
           {waitingPlayers.map((player) => {
             const hasPriority = player.priority === true && (player.priorityGamesLeft ?? 0) > 0;
             return (
@@ -488,7 +488,7 @@ export default function Sidebar({
       </div>
 
       {/* Bottom Buttons */}
-      <div className="p-5 border-t border-green-700 flex flex-col gap-2">
+      <div className="p-5 mt-auto border-t border-green-700 flex flex-col gap-2">
         {session.state === "ACTIVE" ? (
           <Button
             label="Pause Session"
