@@ -1,7 +1,7 @@
 // ============================================
 // SCHEDULER ENGINE
-// The core of PickleFlow
-// Decides who plays next on each court
+// Core of PickleFlow
+// Handles Fair Play, Winner vs Winner, Social
 // ============================================
 
 import type {
@@ -50,8 +50,7 @@ function getPlayingPlayerIds(session: Session): Set<string> {
 
 // ============================================
 // BEST TEAM COMBINATION
-// Given a pool of players, find the best
-// 2v2 combination for a court
+// Finds best 2v2 from a pool of players
 // ============================================
 
 function getBestTeamCombo(
@@ -64,26 +63,23 @@ function getBestTeamCombo(
 
   const maxGames = Math.max(...session.players.map((p) => p.gamesPlayed), 1);
 
-  // Score each player individually first
   const scored = pool.map((p) => ({
     player: p,
     priority: getPlayerPriorityScore(p, currentTime, maxGames),
   }));
 
-  // Sort by priority descending, use seeded random for tiebreaking
   scored.sort((a, b) => {
-    if (Math.abs(a.priority - b.priority) < 0.01) {
-      return rng() - 0.5;
-    }
+    if (Math.abs(a.priority - b.priority) < 0.01) return rng() - 0.5;
     return b.priority - a.priority;
   });
 
-  // Take top 4 candidates
   const top4 = scored.slice(0, 4).map((s) => s.player);
 
-  // Try all possible 2v2 combinations from top 4
-  // C(4,2) = 6 combinations
-  const combos: Array<{ teamA: Player[]; teamB: Player[]; score: number }> = [];
+  const combos: Array<{
+    teamA: Player[];
+    teamB: Player[];
+    score: number;
+  }> = [];
 
   const indices = [0, 1, 2, 3];
   for (let i = 0; i < indices.length; i++) {
@@ -115,7 +111,6 @@ function getBestTeamCombo(
     }
   }
 
-  // Pick best combo
   combos.sort((a, b) => b.score - a.score);
   const best = combos[0];
 
@@ -127,7 +122,7 @@ function getBestTeamCombo(
 
 // ============================================
 // FAIR PLAY SCHEDULER
-// Assigns players purely by fairness
+// Pure fairness -- equal games for everyone
 // ============================================
 
 function scheduleFairPlay(
@@ -143,71 +138,154 @@ function scheduleFairPlay(
     currentTime,
     rng
   );
-
   if (!combo) return null;
-
-  return {
-    courtId: court.id,
-    teamA: combo.teamA,
-    teamB: combo.teamB,
-  };
+  return { courtId: court.id, teamA: combo.teamA, teamB: combo.teamB };
 }
 
 // ============================================
-// WINNER STAYS SCHEDULER
-// Winning team stays, new challengers rotate in
+// WINNER VS WINNER SCHEDULER
+// Winners face winners, losers face losers
+// Teams remixed by skill within each pool
 // ============================================
 
-function scheduleWinnerStays(
+function scheduleWinnerVsWinner(
   court: Court,
   availablePlayers: Player[],
   session: Session,
   currentTime: number,
   rng: () => number
 ): CourtAssignment | null {
-  const lastMatch = court.currentMatch;
+  // Get last round match results
+  const lastRoundMatches = session.matchHistory.filter(
+    (m) => m.round === session.currentRound && m.result !== "PENDING"
+  );
 
-  // If there's a winner staying on this court
-  if (lastMatch && lastMatch.result !== "PENDING") {
-    const winningTeam =
-      lastMatch.result === "TEAM_A" ? lastMatch.teamA : lastMatch.teamB;
+  // Build winner and loser pools
+  const winnerIds = new Set<string>();
+  const loserIds = new Set<string>();
 
-    // Filter out the winning team players from available pool
-    const challengerPool = availablePlayers.filter(
-      (p) => !winningTeam.playerIds.includes(p.id)
-    );
-
-    if (challengerPool.length < 2) return null;
-
-    // Pick best 2 challengers
-    const maxGames = Math.max(
-      ...session.players.map((p) => p.gamesPlayed),
-      1
-    );
-
-    const scored = challengerPool
-      .map((p) => ({
-        player: p,
-        priority: getPlayerPriorityScore(p, currentTime, maxGames),
-      }))
-      .sort((a, b) => b.priority - a.priority);
-
-    const challengers = scored.slice(0, 2).map((s) => s.player);
-
-    return {
-      courtId: court.id,
-      teamA: winningTeam,
-      teamB: { playerIds: challengers.map((p) => p.id) },
-    };
+  for (const match of lastRoundMatches) {
+    const winners =
+      match.result === "TEAM_A"
+        ? match.teamA.playerIds
+        : match.teamB.playerIds;
+    const losers =
+      match.result === "TEAM_A"
+        ? match.teamB.playerIds
+        : match.teamA.playerIds;
+    winners.forEach((id) => winnerIds.add(id));
+    losers.forEach((id) => loserIds.add(id));
   }
 
-  // No winner yet -- treat like Fair Play for first match
+  const availableWinners = availablePlayers.filter((p) =>
+    winnerIds.has(p.id)
+  );
+  const availableLosers = availablePlayers.filter((p) =>
+    loserIds.has(p.id)
+  );
+
+  // Try winners pool first, then losers, then fall back to fair play
+  if (availableWinners.length >= 4) {
+    const combo = getBestTeamCombo(
+      availableWinners,
+      session,
+      currentTime,
+      rng
+    );
+    if (combo)
+      return { courtId: court.id, teamA: combo.teamA, teamB: combo.teamB };
+  }
+
+  if (availableLosers.length >= 4) {
+    const combo = getBestTeamCombo(
+      availableLosers,
+      session,
+      currentTime,
+      rng
+    );
+    if (combo)
+      return { courtId: court.id, teamA: combo.teamA, teamB: combo.teamB };
+  }
+
+  // Fall back to fair play if pools are too small
   return scheduleFairPlay(court, availablePlayers, session, currentTime, rng);
 }
 
 // ============================================
-// MAIN SCHEDULER FUNCTION
-// Entry point -- call this to get next round
+// SOCIAL ROTATION SCHEDULER
+// Maximize partner and opponent variety
+// ============================================
+
+function scheduleSocial(
+  court: Court,
+  availablePlayers: Player[],
+  session: Session,
+  currentTime: number,
+  rng: () => number
+): CourtAssignment | null {
+  if (availablePlayers.length < 4) return null;
+
+  const maxGames = Math.max(...session.players.map((p) => p.gamesPlayed), 1);
+
+  // Score purely on diversity -- ignore priority score mostly
+  const shuffled = seededShuffle([...availablePlayers], rng);
+  const top6 = shuffled.slice(0, Math.min(6, shuffled.length));
+
+  const combos: Array<{
+    teamA: Player[];
+    teamB: Player[];
+    score: number;
+  }> = [];
+
+  for (let i = 0; i < top6.length; i++) {
+    for (let j = i + 1; j < top6.length; j++) {
+      for (let k = 0; k < top6.length; k++) {
+        for (let l = k + 1; l < top6.length; l++) {
+          if (i === k || i === l || j === k || j === l) continue;
+          const teamA = [top6[i], top6[j]];
+          const teamB = [top6[k], top6[l]];
+
+          const partnerScore =
+            getPartnerDiversityScore(teamA[0], teamA[1]) +
+            getPartnerDiversityScore(teamB[0], teamB[1]);
+
+          const opponentScore = getOpponentDiversityScore(teamA, teamB);
+
+          const fairScore =
+            maxGames > 0
+              ? (2 -
+                  (teamA[0].gamesPlayed +
+                    teamA[1].gamesPlayed +
+                    teamB[0].gamesPlayed +
+                    teamB[1].gamesPlayed) /
+                    (maxGames * 4)) *
+                0.3
+              : 0;
+
+          combos.push({
+            teamA,
+            teamB,
+            score: partnerScore * 0.45 + opponentScore * 0.35 + fairScore,
+          });
+        }
+      }
+    }
+  }
+
+  if (combos.length === 0) return null;
+
+  combos.sort((a, b) => b.score - a.score);
+  const best = combos[0];
+
+  return {
+    courtId: court.id,
+    teamA: { playerIds: best.teamA.map((p) => p.id) },
+    teamB: { playerIds: best.teamB.map((p) => p.id) },
+  };
+}
+
+// ============================================
+// MAIN SCHEDULER
 // ============================================
 
 export function generateNextRound(input: SchedulerInput): SchedulerOutput {
@@ -225,7 +303,6 @@ export function generateNextRound(input: SchedulerInput): SchedulerOutput {
   const rng = mulberry32(generateSeed());
   const playingIds = getPlayingPlayerIds(session);
 
-  // Only players not currently on a court
   const eligiblePlayers = getEligiblePlayers(session).filter(
     (p) => !playingIds.has(p.id)
   );
@@ -233,13 +310,11 @@ export function generateNextRound(input: SchedulerInput): SchedulerOutput {
   const assignments: CourtAssignment[] = [];
   const usedPlayerIds = new Set<string>();
 
-  // Shuffle courts slightly for fairness across courts
   const shuffledCourts = seededShuffle([...session.courts], rng);
 
   for (const court of shuffledCourts) {
     if (!court.isActive) continue;
 
-    // Players not yet assigned this round
     const availableForCourt = eligiblePlayers.filter(
       (p) => !usedPlayerIds.has(p.id)
     );
@@ -254,8 +329,16 @@ export function generateNextRound(input: SchedulerInput): SchedulerOutput {
         currentTime,
         rng
       );
-    } else if (court.rotationMode === "WINNER_STAYS") {
-      assignment = scheduleWinnerStays(
+    } else if (court.rotationMode === "WINNER_VS_WINNER") {
+      assignment = scheduleWinnerVsWinner(
+        court,
+        availableForCourt,
+        session,
+        currentTime,
+        rng
+      );
+    } else if (court.rotationMode === "SOCIAL") {
+      assignment = scheduleSocial(
         court,
         availableForCourt,
         session,
@@ -271,7 +354,6 @@ export function generateNextRound(input: SchedulerInput): SchedulerOutput {
     }
   }
 
-  // Update player states based on assignments
   const assignedIds = new Set(
     assignments.flatMap((a) => [
       ...a.teamA.playerIds,
@@ -288,8 +370,6 @@ export function generateNextRound(input: SchedulerInput): SchedulerOutput {
         waitingSince: null,
       };
     }
-
-    // Player is waiting
     if (
       player.attendanceStatus === "PRESENT" ||
       player.attendanceStatus === "WAITING"
@@ -301,7 +381,6 @@ export function generateNextRound(input: SchedulerInput): SchedulerOutput {
         waitingSince: player.waitingSince ?? currentTime,
       };
     }
-
     return player;
   });
 
@@ -315,8 +394,6 @@ export function generateNextRound(input: SchedulerInput): SchedulerOutput {
 
 // ============================================
 // RECORD MATCH RESULT
-// Call this when a match ends
-// Updates player stats
 // ============================================
 
 export function recordMatchResult(
@@ -326,9 +403,7 @@ export function recordMatchResult(
   currentTime: number
 ): Player[] {
   const winningIds = new Set(
-    result === "TEAM_A"
-      ? match.teamA.playerIds
-      : match.teamB.playerIds
+    result === "TEAM_A" ? match.teamA.playerIds : match.teamB.playerIds
   );
 
   const allMatchPlayerIds = new Set([

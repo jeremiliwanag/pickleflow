@@ -78,6 +78,7 @@ interface SessionStore {
 
   // Player management
   addPlayer: (player: Omit<Player, "id" | "joinedAt">) => void;
+  addPlayerToActiveSession: (player: Omit<Player, "id" | "joinedAt">) => void;
   removePlayer: (playerId: string) => void;
   updatePlayer: (playerId: string, updates: Partial<Player>) => void;
   setPlayerStatus: (
@@ -184,6 +185,27 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       state: "ENDED",
       endedAt: updated.endedAt,
     });
+  },
+
+  // Add player during active session
+  addPlayerToActiveSession: (playerData: Omit<Player, "id" | "joinedAt">) => {
+    const { session } = get();
+    if (!session) return;
+
+    const newPlayer: Player = {
+      ...playerData,
+      id: generateId("player"),
+      joinedAt: Date.now(),
+      waitingSince: Date.now(),
+      attendanceStatus: "PRESENT",
+    };
+
+    const updated = {
+      ...session,
+      players: [...session.players, newPlayer],
+    };
+    set({ session: updated });
+    updateSession(session.id, { players: updated.players });
   },
 
   // ============================================

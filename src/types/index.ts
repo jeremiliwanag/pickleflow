@@ -4,7 +4,7 @@
 
 export type SessionState = "SETUP" | "ACTIVE" | "PAUSED" | "ENDED";
 
-export type RotationMode = "FAIR_PLAY" | "WINNER_STAYS";
+export type RotationMode = "FAIR_PLAY" | "WINNER_VS_WINNER" | "SOCIAL";
 
 export type BackToBackPolicy = "STRICT" | "SOFT" | "ALLOWED";
 

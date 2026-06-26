@@ -1,5 +1,7 @@
-import type { Session } from "../../types";
+import { useState } from "react";
+import type { Session, SkillTier } from "../../types";
 import { getSessionFairnessScore } from "../../engine/fairness";
+import { formatSkillRating } from "../../types";
 import PlayerCard from "./PlayerCard";
 import Button from "./Button";
 
@@ -12,7 +14,29 @@ interface SidebarProps {
     playerId: string,
     status: "PRESENT" | "RESTING" | "LEFT"
   ) => void;
+  onAddPlayer: (
+    name: string,
+    tier: SkillTier,
+    division: number
+  ) => void;
+  onDeletePlayer: (playerId: string) => void;
 }
+
+const TIERS: SkillTier[] = [
+  "BEGINNER",
+  "NOVICE",
+  "INTERMEDIATE",
+  "ADVANCED",
+  "ELITE",
+];
+
+const TIER_LABELS: Record<SkillTier, string> = {
+  BEGINNER: "Beg",
+  NOVICE: "Nov",
+  INTERMEDIATE: "Int",
+  ADVANCED: "Adv",
+  ELITE: "Elite",
+};
 
 export default function Sidebar({
   session,
@@ -20,8 +44,16 @@ export default function Sidebar({
   onResume,
   onEnd,
   onPlayerStatusChange,
+  onAddPlayer,
+  onDeletePlayer,
 }: SidebarProps) {
   const fairness = getSessionFairnessScore(session);
+
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newTier, setNewTier] = useState<SkillTier>("BEGINNER");
+  const [newDivision, setNewDivision] = useState(1.0);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const paidCount = session.players.filter(
     (p) => p.payment.status === "PAID"
@@ -53,8 +85,62 @@ export default function Sidebar({
       ? "text-yellow-300"
       : "text-red-300";
 
+  const handleAddPlayer = () => {
+    if (!newName.trim()) return;
+    onAddPlayer(newName.trim(), newTier, newDivision);
+    setNewName("");
+    setNewTier("BEGINNER");
+    setNewDivision(1.0);
+    setShowAddForm(false);
+  };
+
+  const handleDeleteConfirm = (playerId: string) => {
+    setConfirmDeleteId(playerId);
+  };
+
+  const handleDeleteFinal = () => {
+    if (confirmDeleteId) {
+      onDeletePlayer(confirmDeleteId);
+      setConfirmDeleteId(null);
+    }
+  };
+
   return (
-    <div className="w-80 min-h-screen bg-green-900 text-white flex flex-col flex-shrink-0">
+    <div className="w-96 h-screen sticky top-0 bg-green-900 text-white flex flex-col flex-shrink-0 overflow-hidden">
+
+      {/* Confirm Delete Dialog */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 mx-4 max-w-sm w-full shadow-2xl">
+            <h3 className="font-black text-gray-900 text-lg mb-2">
+              Delete Player?
+            </h3>
+            <p className="text-gray-600 text-sm mb-5">
+              This will permanently remove{" "}
+              <span className="font-bold text-gray-900">
+                {session.players.find((p) => p.id === confirmDeleteId)?.name}
+              </span>{" "}
+              from the session. This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleDeleteFinal}
+                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-sm transition-colors"
+              >
+                Yes, Delete
+              </button>
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                className="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 font-black text-sm transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
       <div className="p-5 border-b border-green-700">
         <h1 className="text-2xl font-black tracking-tight text-white">
           PickleFlow
@@ -65,6 +151,7 @@ export default function Sidebar({
         </span>
       </div>
 
+      {/* Fairness */}
       <div className="p-5 border-b border-green-700">
         <p className="text-green-400 text-xs font-semibold uppercase tracking-widest mb-1">
           Fairness Score
@@ -77,6 +164,7 @@ export default function Sidebar({
         </p>
       </div>
 
+      {/* Player counts */}
       <div className="p-5 border-b border-green-700">
         <p className="text-green-400 text-xs font-semibold uppercase tracking-widest mb-3">
           Players
@@ -103,6 +191,7 @@ export default function Sidebar({
         </div>
       </div>
 
+      {/* Payments */}
       <div className="p-5 border-b border-green-700">
         <p className="text-green-400 text-xs font-semibold uppercase tracking-widest mb-3">
           Payments
@@ -125,40 +214,82 @@ export default function Sidebar({
         </div>
       </div>
 
-      <div className="p-5 flex-1 overflow-hidden flex flex-col gap-4">
-        <div className="flex-1 overflow-y-auto flex flex-col gap-2">
-          <p className="text-green-400 text-xs font-semibold uppercase tracking-widest mb-1">
-            Waiting Queue ({waitingPlayers.length})
+      {/* Add Player Form */}
+      {showAddForm && (
+        <div className="p-5 border-b border-green-700 bg-green-800">
+          <p className="text-white font-bold text-sm mb-3">Add Player</p>
+          <input
+            type="text"
+            placeholder="Player name"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            className="w-full bg-green-700 text-white placeholder-green-400 border border-green-600 rounded-xl px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+          />
+          <div className="flex flex-wrap gap-1 mb-3">
+            {TIERS.map((t) => (
+              <button
+                key={t}
+                onClick={() => setNewTier(t)}
+                className={`px-2 py-1 rounded-lg text-xs font-bold border transition-colors ${
+                  newTier === t
+                    ? "bg-emerald-500 border-emerald-400 text-white"
+                    : "border-green-600 text-green-300 hover:border-emerald-400"
+                }`}
+              >
+                {TIER_LABELS[t]}
+              </button>
+            ))}
+          </div>
+          <p className="text-green-300 text-xs mb-1">
+            Division: {newDivision.toFixed(1)} --{" "}
+            {formatSkillRating({ tier: newTier, division: newDivision })}
           </p>
-          {waitingPlayers.map((player) => (
-            <PlayerCard
-              key={player.id}
-              player={player}
-              compact
-              showStatus
-              onStatusChange={(status) =>
-                onPlayerStatusChange(
-                  player.id,
-                  status as "PRESENT" | "RESTING" | "LEFT"
-                )
-              }
-            />
-          ))}
-          {waitingPlayers.length === 0 && (
-            <p className="text-green-600 text-sm italic">
-              All players are on court
-            </p>
+          <input
+            type="range"
+            min={1}
+            max={5}
+            step={0.1}
+            value={newDivision}
+            onChange={(e) => setNewDivision(parseFloat(e.target.value))}
+            className="w-full accent-emerald-400 mb-3"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={handleAddPlayer}
+              className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition-colors"
+            >
+              Add
+            </button>
+            <button
+              onClick={() => setShowAddForm(false)}
+              className="flex-1 py-2 rounded-xl bg-green-700 hover:bg-green-600 text-white font-bold text-sm transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Player Lists */}
+      <div className="p-5 flex-1 overflow-hidden flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <p className="text-green-400 text-xs font-semibold uppercase tracking-widest">
+            Waiting ({waitingPlayers.length})
+          </p>
+          {!showAddForm && (
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="text-xs px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-colors"
+            >
+              + Add Player
+            </button>
           )}
         </div>
 
-        {restingPlayers.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <p className="text-green-400 text-xs font-semibold uppercase tracking-widest mb-1">
-              Resting ({restingPlayers.length})
-            </p>
-            {restingPlayers.map((player) => (
+        <div className="flex-1 overflow-y-auto flex flex-col gap-2 pr-1 scrollbar-thin scrollbar-thumb-green-700 scrollbar-track-transparent hover:scrollbar-thumb-green-600">
+          {waitingPlayers.map((player) => (
+            <div key={player.id} className="relative group">
               <PlayerCard
-                key={player.id}
                 player={player}
                 compact
                 showStatus
@@ -169,13 +300,53 @@ export default function Sidebar({
                   )
                 }
               />
+              <button
+                onClick={() => handleDeleteConfirm(player.id)}
+                className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-xs bg-red-500 hover:bg-red-600 text-white w-5 h-5 rounded-full flex items-center justify-center transition-all"
+              >
+                x
+              </button>
+            </div>
+          ))}
+          {waitingPlayers.length === 0 && (
+            <p className="text-green-600 text-sm italic">
+              All players are on court
+            </p>
+          )}
+        </div>
+
+        {restingPlayers.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="text-green-400 text-xs font-semibold uppercase tracking-widest">
+              Resting ({restingPlayers.length})
+            </p>
+            {restingPlayers.map((player) => (
+              <div key={player.id} className="relative group">
+                <PlayerCard
+                  player={player}
+                  compact
+                  showStatus
+                  onStatusChange={(status) =>
+                    onPlayerStatusChange(
+                      player.id,
+                      status as "PRESENT" | "RESTING" | "LEFT"
+                    )
+                  }
+                />
+                <button
+                  onClick={() => handleDeleteConfirm(player.id)}
+                  className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-xs bg-red-500 hover:bg-red-600 text-white w-5 h-5 rounded-full flex items-center justify-center transition-all"
+                >
+                  x
+                </button>
+              </div>
             ))}
           </div>
         )}
 
         {leftPlayers.length > 0 && (
           <div className="flex flex-col gap-2">
-            <p className="text-green-400 text-xs font-semibold uppercase tracking-widest mb-1">
+            <p className="text-green-400 text-xs font-semibold uppercase tracking-widest">
               Left ({leftPlayers.length})
             </p>
             {leftPlayers.map((player) => (
@@ -203,6 +374,7 @@ export default function Sidebar({
         )}
       </div>
 
+      {/* Bottom Buttons */}
       <div className="p-5 border-t border-green-700 flex flex-col gap-2">
         {session.state === "ACTIVE" ? (
           <Button

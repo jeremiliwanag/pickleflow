@@ -49,7 +49,7 @@ function makePlayer(
 function makeCourt(
   id: string,
   number: number,
-  mode: "FAIR_PLAY" | "WINNER_STAYS"
+  mode: "FAIR_PLAY" | "WINNER_VS_WINNER" | "SOCIAL"
 ): Court {
   return {
     id,
@@ -108,7 +108,7 @@ const TEST_PLAYERS = [
 const TEST_COURTS = [
   makeCourt("c1", 1, "FAIR_PLAY"),
   makeCourt("c2", 2, "FAIR_PLAY"),
-  makeCourt("c3", 3, "WINNER_STAYS"),
+  makeCourt("c3", 3, "FAIR_PLAY"),
 ];
 
 // ============================================
@@ -179,7 +179,6 @@ describe("Scheduler -- Session State Guard", () => {
   it("should return empty assignments when session is in SETUP state", () => {
     const session = makeSession([...TEST_PLAYERS], [...TEST_COURTS]);
     session.state = "SETUP";
-
     const output = generateNextRound({ session, currentTime: Date.now() });
     expect(output.assignments.length).toBe(0);
   });
@@ -187,7 +186,6 @@ describe("Scheduler -- Session State Guard", () => {
   it("should return empty assignments when session is PAUSED", () => {
     const session = makeSession([...TEST_PLAYERS], [...TEST_COURTS]);
     session.state = "PAUSED";
-
     const output = generateNextRound({ session, currentTime: Date.now() });
     expect(output.assignments.length).toBe(0);
   });
@@ -195,7 +193,6 @@ describe("Scheduler -- Session State Guard", () => {
   it("should return empty assignments when session is ENDED", () => {
     const session = makeSession([...TEST_PLAYERS], [...TEST_COURTS]);
     session.state = "ENDED";
-
     const output = generateNextRound({ session, currentTime: Date.now() });
     expect(output.assignments.length).toBe(0);
   });
@@ -305,17 +302,17 @@ describe("Scheduler -- Record Match Result", () => {
 });
 
 describe("Scheduler -- Active Rating", () => {
-it("should use organizer rating when available", () => {
-  const player = makePlayer("px", "Test", "NOVICE", 2.5, "INTERMEDIATE", 3.8);
-  expect(getActiveRating(player)).toBe(
-    skillRatingToNumber({ tier: "INTERMEDIATE", division: 3.8 })
-  );
-});
+  it("should use organizer rating when available", () => {
+    const player = makePlayer("px", "Test", "NOVICE", 2.5, "INTERMEDIATE", 3.8);
+    expect(getActiveRating(player)).toBe(
+      skillRatingToNumber({ tier: "INTERMEDIATE", division: 3.8 })
+    );
+  });
 
-it("should fall back to self rating when organizer rating is null", () => {
-  const player = makePlayer("px", "Test", "NOVICE", 2.5);
-  expect(getActiveRating(player)).toBe(
-    skillRatingToNumber({ tier: "NOVICE", division: 2.5 })
-  );
-});
+  it("should fall back to self rating when organizer rating is null", () => {
+    const player = makePlayer("px", "Test", "NOVICE", 2.5);
+    expect(getActiveRating(player)).toBe(
+      skillRatingToNumber({ tier: "NOVICE", division: 2.5 })
+    );
+  });
 });
