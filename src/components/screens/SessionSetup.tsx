@@ -79,36 +79,35 @@ export default function SessionSetup({ onStart }: SessionSetupProps) {
               >
                 <span className="font-medium">Court {court.number}</span>
                 <div className="flex gap-2">
-                  <button
-                    onClick={() =>
-                      updateCourt(court.id, {
-                        rotationMode: "FAIR_PLAY",
-                        backToBackPolicy: "STRICT",
-                      })
-                    }
-                    className={`px-3 py-1 rounded-lg text-sm font-medium ${
-                      court.rotationMode === "FAIR_PLAY"
-                        ? "bg-green-600 text-white"
-                        : "bg-gray-100 text-gray-600"
-                    }`}
-                  >
-                    Fair Play
-                  </button>
-                  <button
-                    onClick={() =>
-                      updateCourt(court.id, {
-                        rotationMode: "WINNER_STAYS",
-                        backToBackPolicy: "ALLOWED",
-                      })
-                    }
-                    className={`px-3 py-1 rounded-lg text-sm font-medium ${
-                      court.rotationMode === "WINNER_STAYS"
-                        ? "bg-green-600 text-white"
-                        : "bg-gray-100 text-gray-600"
-                    }`}
-                  >
-                    Winner Stays
-                  </button>
+                  {(["FAIR_PLAY", "WINNER_VS_WINNER", "SOCIAL"] as const).map(
+                    (mode) => (
+                      <button
+                        key={mode}
+                        onClick={() =>
+                          updateCourt(court.id, {
+                            rotationMode: mode,
+                            backToBackPolicy:
+                              mode === "FAIR_PLAY" ? "STRICT" : "ALLOWED",
+                          })
+                        }
+                        className={`px-3 py-1 rounded-lg text-sm font-semibold transition-colors ${
+                          court.rotationMode === mode
+                            ? mode === "FAIR_PLAY"
+                              ? "bg-emerald-600 text-white"
+                              : mode === "WINNER_VS_WINNER"
+                              ? "bg-orange-500 text-white"
+                              : "bg-blue-500 text-white"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        }`}
+                      >
+                        {mode === "FAIR_PLAY"
+                          ? "Fair Play"
+                          : mode === "WINNER_VS_WINNER"
+                          ? "W vs W"
+                          : "Social"}
+                      </button>
+                    )
+                  )}
                 </div>
               </div>
             ))}

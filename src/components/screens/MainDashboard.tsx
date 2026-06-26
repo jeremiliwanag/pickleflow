@@ -6,7 +6,7 @@ import Button from "../ui/Button";
 import type { Match, SkillTier } from "../../types";
 
 export default function MainDashboard() {
-  const {
+const {
     session,
     generateRound,
     recordResult,
@@ -18,8 +18,9 @@ export default function MainDashboard() {
     setPlayerStatus,
     addPlayerToActiveSession,
     removePlayer,
+    updateCourt,
   } = useSessionStore();
-
+  
 const [_replacing, setReplacing] = useState<string | null>(null);
 
   if (!session) return null;

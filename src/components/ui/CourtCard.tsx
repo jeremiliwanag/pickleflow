@@ -6,6 +6,17 @@ interface CourtCardProps {
   players: Player[];
   onRecordWinner: (match: Match, result: "TEAM_A" | "TEAM_B") => void;
   onReplacePlayer?: (playerId: string) => void;
+  onModeChange?: (mode: "FAIR_PLAY" | "WINNER_VS_WINNER" | "SOCIAL") => void;
+  isNextUp?: boolean;
+  teamA?: string[];
+  teamB?: string[];
+}
+
+interface CourtCardProps {
+  court: Court;
+  players: Player[];
+  onRecordWinner: (match: Match, result: "TEAM_A" | "TEAM_B") => void;
+  onReplacePlayer?: (playerId: string) => void;
   isNextUp?: boolean;
   teamA?: string[];
   teamB?: string[];
@@ -16,6 +27,7 @@ export default function CourtCard({
   players,
   onRecordWinner,
   onReplacePlayer,
+  onModeChange,
   isNextUp = false,
   teamA = [],
   teamB = [],
@@ -53,15 +65,42 @@ export default function CourtCard({
             : "bg-gray-50 border-gray-200"
         }`}
       >
-        <div className="flex items-center gap-2">
+<div className="flex items-center gap-2 flex-wrap">
           <h3 className="font-black text-gray-900 text-xl">
             {isNextUp ? "Next Up" : `Court ${court.number}`}
           </h3>
-          <span
-            className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${modeBadge}`}
-          >
-            {modeLabel}
-          </span>
+          {!isNextUp && onModeChange && (
+            <div className="flex gap-1">
+              {(["FAIR_PLAY", "WINNER_VS_WINNER", "SOCIAL"] as const).map(
+                (mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => onModeChange(mode)}
+                    className={`text-xs px-2 py-0.5 rounded-full font-bold border transition-colors ${
+                      court.rotationMode === mode
+                        ? mode === "FAIR_PLAY"
+                          ? "bg-emerald-600 text-white border-emerald-600"
+                          : mode === "WINNER_VS_WINNER"
+                          ? "bg-orange-500 text-white border-orange-500"
+                          : "bg-blue-500 text-white border-blue-500"
+                        : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"
+                    }`}
+                  >
+                    {mode === "FAIR_PLAY"
+                      ? "Fair Play"
+                      : mode === "WINNER_VS_WINNER"
+                      ? "W vs W"
+                      : "Social"}
+                  </button>
+                )
+              )}
+            </div>
+          )}
+          {(isNextUp || !onModeChange) && (
+            <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${modeBadge}`}>
+              {modeLabel}
+            </span>
+          )}
         </div>
         <span
           className={`text-xs px-3 py-1 rounded-full font-bold ${
