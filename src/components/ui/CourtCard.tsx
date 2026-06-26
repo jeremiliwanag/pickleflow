@@ -1,4 +1,4 @@
-import { useState } from "react";
+
 import type { Court, Player, Match, SessionRules } from "../../types";
 import PlayerCard from "./PlayerCard";
 import CourtTimer from "./CourtTimer";
@@ -28,8 +28,7 @@ export default function CourtCard({
   teamA = [],
   teamB = [],
 }: CourtCardProps) {
-  const [scoreA, setScoreA] = useState<number>(0);
-  const [scoreB, setScoreB] = useState<number>(0);
+
 
   const match = court.currentMatch;
   const teamAIds = match ? match.teamA.playerIds : teamA;
@@ -185,73 +184,16 @@ const modeBadge =
               />
             )}
 
-            {/* Score inputs */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1">
-                <p className="text-xs font-bold text-gray-400 text-center mb-1">
-                  Team A Score
-                </p>
-                <div className="flex items-center justify-center gap-2">
-                  <button
-                    onClick={() => setScoreA((s) => Math.max(0, s - 1))}
-                    className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-black text-sm transition-colors"
-                  >
-                    −
-                  </button>
-                  <span className="text-2xl font-black text-gray-900 w-8 text-center tabular-nums">
-                    {scoreA}
-                  </span>
-                  <button
-                    onClick={() => setScoreA((s) => s + 1)}
-                    className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-black text-sm transition-colors"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-              <div className="text-gray-300 font-black text-lg">vs</div>
-              <div className="flex-1">
-                <p className="text-xs font-bold text-gray-400 text-center mb-1">
-                  Team B Score
-                </p>
-                <div className="flex items-center justify-center gap-2">
-                  <button
-                    onClick={() => setScoreB((s) => Math.max(0, s - 1))}
-                    className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-black text-sm transition-colors"
-                  >
-                    −
-                  </button>
-                  <span className="text-2xl font-black text-gray-900 w-8 text-center tabular-nums">
-                    {scoreB}
-                  </span>
-                  <button
-                    onClick={() => setScoreB((s) => s + 1)}
-                    className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-black text-sm transition-colors"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            </div>
-
             {/* Win buttons */}
             <div className="flex gap-3">
               <button
-                onClick={() => {
-                  onRecordWinner(match, "TEAM_A", scoreA, scoreB);
-                  setScoreA(0);
-                  setScoreB(0);
-                }}
+                onClick={() => onRecordWinner(match, "TEAM_A")}
                 className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm transition-colors shadow-sm"
               >
                 Team A Wins
               </button>
               <button
-                onClick={() => {
-                  onRecordWinner(match, "TEAM_B", scoreA, scoreB);
-                  setScoreA(0);
-                  setScoreB(0);
-                }}
+                onClick={() => onRecordWinner(match, "TEAM_B")}
                 className="flex-1 py-3 rounded-xl bg-gray-800 hover:bg-gray-900 text-white font-black text-sm transition-colors shadow-sm"
               >
                 Team B Wins

@@ -83,6 +83,12 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   },
 
   addToRoster: async (name, tier, division) => {
+    // Don't create a duplicate if this name already exists in the roster
+    const existing = get().roster.find(
+      (p) => p.name.trim().toLowerCase() === name.trim().toLowerCase()
+    );
+    if (existing) return;
+
     const newPlayer: Player = {
       id: generateId("player"),
       name,
@@ -106,7 +112,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
 
     try {
       await savePlayer(newPlayer);
-      set((state) => ({ roster: [...state.roster, newPlayer] }));
+      // onSnapshot listener will update roster automatically — don't push manually
     } catch (error) {
       set({ error: "Failed to add player" });
     }
@@ -128,9 +134,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   removeFromRoster: async (playerId) => {
     try {
       await deletePlayer(playerId);
-      set((state) => ({
-        roster: state.roster.filter((p) => p.id !== playerId),
-      }));
+      // onSnapshot will remove from roster automatically
     } catch (error) {
       set({ error: "Failed to remove player" });
     }
