@@ -109,9 +109,11 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
 
   const handleDelete = async () => {
     if (!deleteConfirmId) return;
-    await removeFromRoster(deleteConfirmId);
+    const id = deleteConfirmId;
+    // Close modal immediately so UI feels instant
     setDeleteConfirmId(null);
-    if (profilePlayer?.id === deleteConfirmId) setProfilePlayer(null);
+    if (profilePlayer?.id === id) setProfilePlayer(null);
+    await removeFromRoster(id);
   };
 
   const handleAdd = async () => {

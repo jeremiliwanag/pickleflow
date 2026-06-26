@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import type { Player, SkillTier } from "../../types";
-import { formatSkillRating, getActiveRating } from "../../types";
+import { formatSkillRating, getActiveRating, skillRatingToNumber, numberToSkillRating } from "../../types";
 import PhotoCropModal from "./PhotoCropModal";
 
 interface PlayerProfileProps {
@@ -237,21 +237,42 @@ export default function PlayerProfile({
             </div>
           )}
 
-          {/* Badges */}
-          <div className="flex flex-wrap gap-2 justify-center">
-            <span className={`text-sm px-4 py-1.5 rounded-full font-bold ${TIER_BADGE_COLORS[player.ratings.self.tier]}`}>
-              Self: {formatSkillRating(player.ratings.self)}
-            </span>
-            {communityCount > 0 && (
-              <span className={`text-sm px-4 py-1.5 rounded-full font-bold ${TIER_BADGE_COLORS[activeRating.tier]}`}>
-                Community: {TIER_LABELS[activeRating.tier]} {activeRating.division.toFixed(1)}
-                <span className="ml-1 opacity-60 text-xs">({communityCount})</span>
-              </span>
-            )}
+          {/* Rating badges */}
+          <div className="w-full max-w-xs space-y-2">
+            {/* Average — primary, used for matchmaking */}
+            <div className={`flex items-center justify-between rounded-xl px-4 py-2.5 ${TIER_BADGE_COLORS[activeRating.tier]} border-2`}>
+              <span className="text-xs font-black uppercase tracking-wider opacity-70">Avg Rating</span>
+              <span className="font-black text-base">{formatSkillRating(activeRating)}</span>
+            </div>
+            <p className="text-xs text-gray-400 text-center -mt-1">
+              Used for matchmaking · self{communityCount > 0 ? ` + ${communityCount} community` : " rating only"}
+            </p>
+
+            {/* Self + Community breakdown */}
+            <div className="flex gap-2">
+              <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2 text-center border border-gray-100">
+                <p className="text-xs text-gray-400 mb-0.5">Self</p>
+                <p className="font-black text-sm text-gray-800">{formatSkillRating(player.ratings.self)}</p>
+              </div>
+              {communityCount > 0 && (() => {
+                // Community-only average for display
+                const comm = player.ratings.community!;
+                const nums = comm.map(c => skillRatingToNumber(c.rating));
+                const avg = nums.reduce((s, n) => s + n, 0) / nums.length;
+                const commAvg = numberToSkillRating(avg);
+                return (
+                  <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2 text-center border border-gray-100">
+                    <p className="text-xs text-gray-400 mb-0.5">Community ({communityCount})</p>
+                    <p className="font-black text-sm text-gray-800">{formatSkillRating(commAvg)}</p>
+                  </div>
+                );
+              })()}
+            </div>
+
             {(player.winStreak ?? 0) >= 3 && (
-              <span className="text-sm px-4 py-1.5 rounded-full font-bold bg-orange-500 text-white">
-                🔥 {player.winStreak} streak
-              </span>
+              <div className="bg-orange-500 text-white rounded-xl px-4 py-2 text-center font-black text-sm">
+                🔥 {player.winStreak} win streak
+              </div>
             )}
           </div>
         </div>
@@ -442,8 +463,8 @@ export default function PlayerProfile({
                   onChange={(e) => setRateDivision(parseFloat(e.target.value))}
                   className="w-full accent-emerald-600 h-2" />
                 <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <span>1.0 — Beginner</span>
-                  <span>5.0 — Elite</span>
+                  <span>1.0 — Lowest</span>
+                  <span>5.0 — Highest</span>
                 </div>
               </div>
 

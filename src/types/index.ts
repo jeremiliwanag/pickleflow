@@ -48,32 +48,54 @@ export interface CommunityRating {
 
 export interface PlayerRatings {
   self: SkillRating;
-  community?: CommunityRating[]; // max 5
+  community?: CommunityRating[]; // max 10
   system: SkillRating | null;
   /** @deprecated legacy field — use community ratings instead */
   organizer?: SkillRating | null;
 }
 
+// Internal number → SkillRating (inverse of skillRatingToNumber)
+export function numberToSkillRating(n: number): SkillRating {
+  const tiers: SkillTier[] = ["BEGINNER", "NOVICE", "INTERMEDIATE", "ADVANCED", "ELITE"];
+  const bases = [0, 6, 12, 18, 24];
+  let tier: SkillTier = "BEGINNER";
+  let division = n;
+  for (let i = bases.length - 1; i >= 0; i--) {
+    if (n >= bases[i]) {
+      tier = tiers[i];
+      division = parseFloat((n - bases[i]).toFixed(1));
+      break;
+    }
+  }
+  // Clamp division to 1.0–5.9
+  division = Math.max(1.0, Math.min(5.9, division));
+  return { tier, division };
+}
+
+/**
+ * Returns the TRUE average rating across self + all community ratings.
+ * This is the number used for matchmaking — everyone's opinion counts,
+ * including the player's own self-assessment.
+ *
+ * If no community ratings exist yet, returns the self rating.
+ * Legacy organizer field is included for backward compat.
+ */
 export function getActiveRating(ratings: PlayerRatings): SkillRating {
-  if ((ratings.community?.length ?? 0) > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const community = ratings.community!;
-    const avgDivision =
-      community.reduce((sum, r) => sum + r.rating.division, 0) /
-      community.length;
-    const tiers = community.map((r) => r.rating.tier);
-    const tier = tiers.sort(
-      (a, b) =>
-        tiers.filter((t) => t === b).length -
-        tiers.filter((t) => t === a).length
-    )[0];
-    return { tier, division: parseFloat(avgDivision.toFixed(1)) };
-  }
-  // Legacy organizer field — used when no community ratings exist
-  if (ratings.organizer) {
-    return ratings.organizer;
-  }
-  return ratings.self;
+  const community = ratings.community ?? [];
+
+  // Collect all ratings: self + community (+ legacy organizer if present)
+  const allRatings: SkillRating[] = [ratings.self];
+  if (ratings.organizer) allRatings.push(ratings.organizer);
+  for (const cr of community) allRatings.push(cr.rating);
+
+  if (allRatings.length === 1) return ratings.self;
+
+  // Average in numeric space so tier boundaries are handled correctly
+  const avgNum =
+    allRatings.reduce((sum, r) => sum + skillRatingToNumber(r), 0) /
+    allRatings.length;
+
+  return numberToSkillRating(avgNum);
 }
 
 // Display: "Novice 2.7"

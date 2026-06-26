@@ -302,11 +302,11 @@ describe("Scheduler -- Record Match Result", () => {
 });
 
 describe("Scheduler -- Active Rating", () => {
-  it("should use organizer rating when available", () => {
+  it("should average self and organizer ratings when organizer is present", () => {
+    // self = NOVICE 2.5 → 8.5, organizer = INTERMEDIATE 3.8 → 15.8
+    // numeric avg = 12.15 → INTERMEDIATE div 0.15, clamped to 1.0 → number 13
     const player = makePlayer("px", "Test", "NOVICE", 2.5, "INTERMEDIATE", 3.8);
-    expect(getActiveRating(player)).toBe(
-      skillRatingToNumber({ tier: "INTERMEDIATE", division: 3.8 })
-    );
+    expect(getActiveRating(player)).toBe(13);
   });
 
   it("should fall back to self rating when organizer rating is null", () => {
