@@ -10,7 +10,7 @@ interface SessionSetupProps {
 export default function SessionSetup({ onStart }: SessionSetupProps) {
   const { createSession, session, updateCourt, startSession } =
     useSessionStore();
-  const [name, setName] = useState("Wednesday Night");
+  const [name, setName] = useState("Friday Game");
   const [courtCount, setCourtCount] = useState(3);
 
   const handleCreate = () => {
