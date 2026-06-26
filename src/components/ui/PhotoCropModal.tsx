@@ -15,12 +15,8 @@ export default function PhotoCropModal({ file, onConfirm, onCancel }: PhotoCropM
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
 
-  // Drag state
-  const dragging = useRef(false);
-  const lastPos = useRef({ x: 0, y: 0 });
-
-  // Pinch-to-zoom state
-  const lastPinchDist = useRef<number | null>(null);
+  // Active pointers for drag + pinch
+  const activePointers = useRef<Map<number, { x: number; y: number }>>(new Map());
 
   // ── Load image ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -90,80 +86,63 @@ export default function PhotoCropModal({ file, onConfirm, onCancel }: PhotoCropM
     return () => canvas.removeEventListener("wheel", onWheel);
   }, []);
 
-  // ── Mouse drag (document-level so drag works outside canvas bounds) ────────
+  // ── Unified pointer events (mouse + touch + stylus) ─────────────────────
+  // setPointerCapture routes all events to this element even outside bounds.
+  // Two active pointers = pinch zoom; one = drag.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const onMouseDown = (e: MouseEvent) => {
-      dragging.current = true;
-      lastPos.current = { x: e.clientX, y: e.clientY };
-    };
-    const onMouseMove = (e: MouseEvent) => {
-      if (!dragging.current) return;
-      setOffset((prev) => ({
-        x: prev.x + e.clientX - lastPos.current.x,
-        y: prev.y + e.clientY - lastPos.current.y,
-      }));
-      lastPos.current = { x: e.clientX, y: e.clientY };
-    };
-    const onMouseUp = () => { dragging.current = false; };
+    const ptrs = activePointers.current;
 
-    canvas.addEventListener("mousedown", onMouseDown);
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
-    return () => {
-      canvas.removeEventListener("mousedown", onMouseDown);
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
-    };
-  }, []);
-
-  // ── Touch drag + pinch zoom (non-passive so we can preventDefault) ────────
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 1) {
-        dragging.current = true;
-        lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      } else if (e.touches.length === 2) {
-        dragging.current = false;
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        lastPinchDist.current = Math.sqrt(dx * dx + dy * dy);
-      }
-    };
-    const onTouchMove = (e: TouchEvent) => {
+    const onPointerDown = (e: PointerEvent) => {
       e.preventDefault();
-      if (e.touches.length === 1 && dragging.current) {
-        setOffset((prev) => ({
-          x: prev.x + e.touches[0].clientX - lastPos.current.x,
-          y: prev.y + e.touches[0].clientY - lastPos.current.y,
-        }));
-        lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      } else if (e.touches.length === 2 && lastPinchDist.current != null) {
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const factor = dist / lastPinchDist.current;
-        setScale((prev) => Math.min(10, Math.max(0.15, prev * factor)));
-        lastPinchDist.current = dist;
-      }
-    };
-    const onTouchEnd = () => {
-      dragging.current = false;
-      lastPinchDist.current = null;
+      canvas.setPointerCapture(e.pointerId);
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     };
 
-    canvas.addEventListener("touchstart", onTouchStart, { passive: false });
-    canvas.addEventListener("touchmove", onTouchMove, { passive: false });
-    canvas.addEventListener("touchend", onTouchEnd);
+    const onPointerMove = (e: PointerEvent) => {
+      if (!ptrs.has(e.pointerId)) return;
+      e.preventDefault();
+
+      const prev = ptrs.get(e.pointerId)!;
+      const cur = { x: e.clientX, y: e.clientY };
+
+      if (ptrs.size === 1) {
+        // Single pointer — drag
+        setOffset((o) => ({
+          x: o.x + cur.x - prev.x,
+          y: o.y + cur.y - prev.y,
+        }));
+      } else if (ptrs.size === 2) {
+        // Two pointers — pinch zoom
+        const ids = [...ptrs.keys()];
+        const other = ptrs.get(ids[0] === e.pointerId ? ids[1] : ids[0])!;
+        const prevDist = Math.hypot(prev.x - other.x, prev.y - other.y);
+        const curDist = Math.hypot(cur.x - other.x, cur.y - other.y);
+        if (prevDist > 0) {
+          const factor = curDist / prevDist;
+          setScale((s) => Math.min(10, Math.max(0.15, s * factor)));
+        }
+      }
+
+      ptrs.set(e.pointerId, cur);
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      ptrs.delete(e.pointerId);
+    };
+
+    canvas.addEventListener("pointerdown", onPointerDown, { passive: false });
+    canvas.addEventListener("pointermove", onPointerMove, { passive: false });
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerUp);
+
     return () => {
-      canvas.removeEventListener("touchstart", onTouchStart);
-      canvas.removeEventListener("touchmove", onTouchMove);
-      canvas.removeEventListener("touchend", onTouchEnd);
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointercancel", onPointerUp);
     };
   }, []);
 
