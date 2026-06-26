@@ -85,9 +85,16 @@ export default function PlayerCard({
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <p className="font-bold text-white text-sm leading-tight truncate">
-            {player.name}
-          </p>
+          <div className="flex items-center gap-1.5">
+            <p className="font-bold text-white text-sm leading-tight truncate">
+              {player.name}
+            </p>
+            {(player.winStreak ?? 0) >= 3 && (
+              <span className="text-xs bg-orange-500 text-white px-1.5 py-0.5 rounded-full font-black flex-shrink-0">
+                🔥{player.winStreak}
+              </span>
+            )}
+          </div>
           <p className="text-green-300 text-xs mt-0.5 font-medium">
             {formatSkillRating(rating)}
           </p>
@@ -149,9 +156,16 @@ export default function PlayerCard({
         </div>
       )}
       <div className="text-center">
-        <p className="font-black text-gray-900 text-base leading-tight">
-          {player.name}
-        </p>
+        <div className="flex items-center justify-center gap-1.5">
+          <p className="font-black text-gray-900 text-base leading-tight">
+            {player.name}
+          </p>
+          {(player.winStreak ?? 0) >= 3 && (
+            <span className="text-xs bg-orange-500 text-white px-1.5 py-0.5 rounded-full font-black">
+              🔥{player.winStreak}
+            </span>
+          )}
+        </div>
         <span
           className={`text-xs px-2.5 py-1 rounded-full font-semibold mt-1.5 inline-block ${tierColor}`}
         >

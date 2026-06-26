@@ -4,9 +4,10 @@ import { usePlayerStore } from "../../store/playerStore";
 import Sidebar from "../ui/Sidebar";
 import CourtCard from "../ui/CourtCard";
 import PlayerProfile from "../ui/PlayerProfile";
+import SessionSummaryModal from "../ui/SessionSummaryModal";
 import Button from "../ui/Button";
 import { uploadPlayerPhoto } from "../../db/storageDB";
-import type { Match, SkillTier, RotationMode, Player } from "../../types";
+import type { Match, SkillTier, RotationMode, Player, Session } from "../../types";
 
 export default function MainDashboard() {
   const session = useSessionStore((s) => s.session);
@@ -24,29 +25,45 @@ export default function MainDashboard() {
 
   const addCommunityRating = usePlayerStore((s) => s.addCommunityRating);
   const updatePlayerPhoto = usePlayerStore((s) => s.updatePlayerPhoto);
+  const updateRating = usePlayerStore((s) => s.updateRating);
   const updateSessionPlayer = useSessionStore((s) => s.updatePlayer);
 
   const [_replacing, setReplacing] = useState<string | null>(null);
   const [profilePlayerId, setProfilePlayerId] = useState<string | null>(null);
+  // Capture session snapshot for summary before endSession clears it
+  const [summarySession, setSummarySession] = useState<Session | null>(null);
 
-  if (!session) return null;
+  if (!session) {
+    // Show summary if available after session ended
+    if (summarySession) {
+      return (
+        <SessionSummaryModal
+          session={summarySession}
+          onClose={() => setSummarySession(null)}
+        />
+      );
+    }
+    return null;
+  }
 
-  // Always derive live from session so community ratings update without re-opening
   const profilePlayer: Player | null =
     profilePlayerId
       ? (session.players.find((p) => p.id === profilePlayerId) ?? null)
       : null;
 
-  const handleRecordWinner = (match: Match, result: "TEAM_A" | "TEAM_B") => {
-    recordResult(match, result);
+  const handleRecordWinner = (
+    match: Match,
+    result: "TEAM_A" | "TEAM_B",
+    scoreA?: number,
+    scoreB?: number
+  ) => {
+    void recordResult(match, result, scoreA, scoreB);
   };
 
   const handleGenerateRound = () => {
     generateRound();
-    const { lastOutput } = useSessionStore.getState();
-    if (lastOutput) {
-      applyAssignments(lastOutput.assignments);
-    }
+    const { lastOutput: out } = useSessionStore.getState();
+    if (out) applyAssignments(out.assignments);
   };
 
   const handlePlayerStatusChange = (
@@ -56,18 +73,10 @@ export default function MainDashboard() {
     setPlayerStatus(playerId, status);
   };
 
-  const handleAddPlayer = (
-    name: string,
-    tier: SkillTier,
-    division: number
-  ) => {
+  const handleAddPlayer = (name: string, tier: SkillTier, division: number) => {
     addPlayerToActiveSession({
       name,
-      ratings: {
-        self: { tier, division },
-        community: [],
-        system: null,
-      },
+      ratings: { self: { tier, division }, community: [], system: null },
       attendanceStatus: "PRESENT",
       payment: { status: "UNPAID" },
       leavingSoon: null,
@@ -81,13 +90,17 @@ export default function MainDashboard() {
     });
   };
 
-  const handleDeletePlayer = (playerId: string) => {
-    removePlayer(playerId);
+  const handleEnd = async () => {
+    // Snapshot before endSession clears it
+    setSummarySession({
+      ...session,
+      state: "ENDED",
+      endedAt: Date.now(),
+    });
+    await endSession();
   };
 
-  const handleReplacePlayer = (playerId: string) => {
-    setReplacing(playerId);
-  };
+  const handleReplacePlayer = (playerId: string) => setReplacing(playerId);
 
   const handleModeChange = (courtId: string, mode: RotationMode) => {
     updateCourt(courtId, {
@@ -106,7 +119,6 @@ export default function MainDashboard() {
           onClose={() => setProfilePlayerId(null)}
           onRatePlayer={async (tier, division) => {
             await addCommunityRating(profilePlayer.id, tier, division);
-            // Sync community ratings from roster back into the session player
             const { roster } = usePlayerStore.getState();
             const updated = roster.find((p) => p.id === profilePlayer.id);
             if (updated) updateSessionPlayer(profilePlayer.id, { ratings: updated.ratings });
@@ -116,6 +128,12 @@ export default function MainDashboard() {
             await updatePlayerPhoto(profilePlayer.id, url);
             updateSessionPlayer(profilePlayer.id, { photoURL: url });
           }}
+          onUpdateSelfRating={async (tier, division) => {
+            await updateRating(profilePlayer.id, "self", tier, division);
+            const { roster } = usePlayerStore.getState();
+            const updated = roster.find((p) => p.id === profilePlayer.id);
+            if (updated) updateSessionPlayer(profilePlayer.id, { ratings: updated.ratings });
+          }}
         />
       )}
 
@@ -123,10 +141,10 @@ export default function MainDashboard() {
         session={session}
         onPause={pauseSession}
         onResume={resumeSession}
-        onEnd={endSession}
+        onEnd={handleEnd}
         onPlayerStatusChange={handlePlayerStatusChange}
         onAddPlayer={handleAddPlayer}
-        onDeletePlayer={handleDeletePlayer}
+        onDeletePlayer={removePlayer}
         onAddCommunityRating={async (playerId, tier, division) => {
           await addCommunityRating(playerId, tier, division);
           const { roster } = usePlayerStore.getState();
@@ -137,17 +155,20 @@ export default function MainDashboard() {
           await updatePlayerPhoto(playerId, photoURL);
           updateSessionPlayer(playerId, { photoURL });
         }}
+        onUpdateSelfRating={async (playerId, tier, division) => {
+          await updateRating(playerId, "self", tier, division);
+          const { roster } = usePlayerStore.getState();
+          const updated = roster.find((p) => p.id === playerId);
+          if (updated) updateSessionPlayer(playerId, { ratings: updated.ratings });
+        }}
       />
 
       <div className="flex-1 p-6 overflow-y-auto h-screen">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">
-              {session.name}
-            </h2>
+            <h2 className="text-2xl font-bold text-gray-900">{session.name}</h2>
             <p className="text-gray-600 text-sm">
-              Round {session.currentRound} --{" "}
-              {session.players.length} Players
+              Round {session.currentRound} · {session.players.length} Players
             </p>
           </div>
           <Button
@@ -163,6 +184,7 @@ export default function MainDashboard() {
               key={court.id}
               court={court}
               players={session.players}
+              rules={session.rules}
               onRecordWinner={handleRecordWinner}
               onReplacePlayer={handleReplacePlayer}
               onModeChange={(mode) => handleModeChange(court.id, mode)}

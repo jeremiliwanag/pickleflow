@@ -7,6 +7,7 @@ interface PlayerProfileProps {
   onClose: () => void;
   onRatePlayer: (tier: SkillTier, division: number) => void;
   onPhotoUpload: (file: File) => Promise<void>;
+  onUpdateSelfRating?: (tier: SkillTier, division: number) => Promise<void>;
 }
 
 const TIERS: SkillTier[] = [
@@ -67,6 +68,7 @@ export default function PlayerProfile({
   onClose,
   onRatePlayer,
   onPhotoUpload,
+  onUpdateSelfRating,
 }: PlayerProfileProps) {
   const [rateTier, setRateTier] = useState<SkillTier>("INTERMEDIATE");
   const [rateDivision, setRateDivision] = useState(3.0);
@@ -74,6 +76,13 @@ export default function PlayerProfile({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [submittedAtCount, setSubmittedAtCount] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Admin self-rating edit
+  const [editingSelf, setEditingSelf] = useState(false);
+  const [selfTier, setSelfTier] = useState<SkillTier>(player.ratings.self.tier);
+  const [selfDivision, setSelfDivision] = useState(player.ratings.self.division);
+  const [selfSaving, setSelfSaving] = useState(false);
+  const [selfSaved, setSelfSaved] = useState(false);
 
   const activeRating = getActiveRating(player.ratings);
   const communityCount = player.ratings.community?.length ?? 0;
@@ -228,6 +237,97 @@ export default function PlayerProfile({
             </div>
           </div>
         </div>
+
+        {/* Admin: Edit Self Rating */}
+        {onUpdateSelfRating && (
+          <div className="px-6 py-5 border-b border-gray-100">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+                Self Rating
+              </p>
+              {!editingSelf && (
+                <button
+                  onClick={() => {
+                    setSelfTier(player.ratings.self.tier);
+                    setSelfDivision(player.ratings.self.division);
+                    setSelfSaved(false);
+                    setEditingSelf(true);
+                  }}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-700 font-semibold transition-colors"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+
+            {!editingSelf ? (
+              <div className="flex items-center gap-2">
+                <span className={`text-xs px-3 py-1 rounded-full font-semibold ${TIER_BADGE_COLORS[player.ratings.self.tier]}`}>
+                  {TIER_LABELS[player.ratings.self.tier]} {player.ratings.self.division.toFixed(1)}
+                </span>
+                {selfSaved && (
+                  <span className="text-emerald-600 text-xs font-semibold">✓ Saved</span>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* Tier buttons */}
+                <div className="flex flex-wrap gap-1.5">
+                  {TIERS.map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setSelfTier(t)}
+                      className={`text-xs px-2.5 py-1 rounded-full font-semibold transition-colors ${
+                        selfTier === t
+                          ? TIER_BADGE_COLORS[t]
+                          : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                      }`}
+                    >
+                      {TIER_LABELS[t]}
+                    </button>
+                  ))}
+                </div>
+                {/* Division slider */}
+                <div>
+                  <div className="flex justify-between text-xs text-gray-400 mb-1">
+                    <span>Division</span>
+                    <span className="font-bold text-gray-700">{selfDivision.toFixed(1)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={5}
+                    step={0.1}
+                    value={selfDivision}
+                    onChange={(e) => setSelfDivision(parseFloat(e.target.value))}
+                    className="w-full accent-emerald-600"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      setSelfSaving(true);
+                      await onUpdateSelfRating(selfTier, selfDivision);
+                      setSelfSaving(false);
+                      setSelfSaved(true);
+                      setEditingSelf(false);
+                    }}
+                    disabled={selfSaving}
+                    className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors disabled:opacity-60"
+                  >
+                    {selfSaving ? "Saving…" : "Save Rating"}
+                  </button>
+                  <button
+                    onClick={() => setEditingSelf(false)}
+                    className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold text-xs transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Community Rating */}
         {communityCount < 5 && (

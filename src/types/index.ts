@@ -115,6 +115,7 @@ export interface Player {
   // Stats for this session
   gamesPlayed: number;
   gamesWon: number;
+  winStreak?: number;
   waitingSince: number | null; // timestamp in ms
   consecutiveGames: number;
   partners: string[]; // player IDs played with
@@ -151,6 +152,8 @@ export interface Match {
   teamA: Team;
   teamB: Team;
   result: MatchResult;
+  scoreA?: number;
+  scoreB?: number;
   startTime: number | null; // timestamp in ms
   endTime: number | null;
   round: number;
@@ -214,6 +217,22 @@ export interface SchedulerOutput {
   updatedPlayers: Player[];
   fairnessScore: number;
   round: number;
+}
+
+// ============================================
+// PLAYER HISTORY
+// ============================================
+
+export interface PlayerSessionRecord {
+  id: string; // `${playerId}_${sessionId}`
+  playerId: string;
+  sessionId: string;
+  sessionName: string;
+  date: number;
+  gamesPlayed: number;
+  gamesWon: number;
+  winRate: number; // 0–100
+  peakWinStreak: number;
 }
 
 // ============================================

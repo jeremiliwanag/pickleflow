@@ -35,9 +35,37 @@ export function getSkillGap(playerA: Player, playerB: Player): number {
 }
 
 // ============================================
+// TEAM BALANCE SCORE  ← THE KEY METRIC
+// How close are the two team averages?
+// Returns 0 to 1 (1 = perfectly balanced)
+//
+// A gap of 0   → 1.00 (identical team averages)
+// A gap of 0.3 → 0.55 (slight imbalance, acceptable)
+// A gap of 0.5 → 0.25 (noticeable)
+// A gap of 0.7+→ 0.00 (lopsided, one team clearly stronger)
+//
+// Uses 1 - (gap * 1.5)^1.5 so small gaps are still rewarded
+// and the curve drops steeply past 0.5
+// ============================================
+
+export function getTeamBalanceScore(
+  teamA: Player[],
+  teamB: Player[]
+): number {
+  const avgA =
+    teamA.reduce((s, p) => s + getActiveRating(p), 0) / teamA.length;
+  const avgB =
+    teamB.reduce((s, p) => s + getActiveRating(p), 0) / teamB.length;
+  const gap = Math.abs(avgA - avgB);
+  // Steeper curve so 0.5 gap scores ~0.25 (not still "ok")
+  return Math.max(0, 1 - Math.pow(gap * 1.5, 1.5));
+}
+
+// ============================================
 // SKILL FIT SCORE
-// How well does a group of players match skill-wise
-// Returns 0 to 1 (1 = perfect match)
+// Is there a wildly mismatched individual in the group?
+// Used as a penalty multiplier when maxSkillGap is set.
+// Returns 0 to 1 (1 = all players similar skill)
 // ============================================
 
 export function getSkillFitScore(
@@ -55,7 +83,6 @@ export function getSkillFitScore(
   const score = Math.max(0, 1 - gap / 2);
 
   if (setting === "STRICT") {
-    // Penalize harder for mismatches
     return score * score;
   }
 

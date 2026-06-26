@@ -19,7 +19,8 @@ import {
   getPlayerPriorityScore,
   getPartnerDiversityScore,
   getOpponentDiversityScore,
-  getSkillFitScore,
+  getTeamBalanceScore,
+  getActiveRating,
   getSessionFairnessScore,
 } from "./fairness";
 
@@ -49,70 +50,133 @@ function getPlayingPlayerIds(session: Session): Set<string> {
 }
 
 // ============================================
+// COMBO SCORER
+// Scores one specific 2v2 arrangement.
+//
+// Weights by mode:
+//   FAIR_PLAY:  team balance 60% | partner 25% | opponent 15%
+//   SOCIAL:     team balance 30% | partner 45% | opponent 25%
+//
+// Hard penalties applied when skillMatching is set:
+//   STRICT: any individual gap > maxSkillGap  → score × 0.05
+//   SOFT:   any individual gap > maxSkillGap×1.5 → score × 0.40
+// ============================================
+
+type ScoringMode = "FAIR_PLAY" | "SOCIAL";
+
+function scoreCombo(
+  teamA: Player[],
+  teamB: Player[],
+  session: Session,
+  mode: ScoringMode
+): number {
+  const balance = getTeamBalanceScore(teamA, teamB);
+
+  const partnerA = getPartnerDiversityScore(teamA[0], teamA[1]);
+  const partnerB = getPartnerDiversityScore(teamB[0], teamB[1]);
+  const partner = (partnerA + partnerB) / 2;
+
+  const opponent = getOpponentDiversityScore(teamA, teamB);
+
+  let score: number;
+  if (mode === "SOCIAL") {
+    score = balance * 0.30 + partner * 0.45 + opponent * 0.25;
+  } else {
+    // FAIR_PLAY — team balance is the dominant factor
+    score = balance * 0.60 + partner * 0.25 + opponent * 0.15;
+  }
+
+  // Skill gap enforcement
+  const { skillMatching, maxSkillGap } = session.rules;
+  if (skillMatching !== "OFF" && maxSkillGap != null) {
+    const allRatings = [...teamA, ...teamB].map(getActiveRating);
+    const individualGap = Math.max(...allRatings) - Math.min(...allRatings);
+
+    if (skillMatching === "STRICT" && individualGap > maxSkillGap) {
+      score *= 0.05; // near-zero so this combo is almost never chosen
+    } else if (skillMatching === "SOFT" && individualGap > maxSkillGap * 1.5) {
+      score *= 0.40; // penalised but not eliminated
+    }
+  }
+
+  return score;
+}
+
+// ============================================
 // BEST TEAM COMBINATION
-// Finds best 2v2 from a pool of players
+// Finds the best 2v2 from a candidate pool.
+//
+// Strategy:
+//   1. Priority-rank the pool (who waited longest / played fewest games)
+//   2. Take top N candidates (more candidates → better skill matching)
+//   3. Try every C(N,4) group-of-4, then all 3 possible 2v2 splits
+//   4. Return the split with the highest scoreCombo()
+//
+// N=8 gives C(8,4)=70 groups × 3 splits = 210 combos — fast.
+// N capped at 8 so we still prefer players who most need to play.
 // ============================================
 
 function getBestTeamCombo(
   pool: Player[],
   session: Session,
   currentTime: number,
-  rng: () => number
+  rng: () => number,
+  mode: ScoringMode = "FAIR_PLAY"
 ): { teamA: Team; teamB: Team } | null {
   if (pool.length < 4) return null;
 
   const maxGames = Math.max(...session.players.map((p) => p.gamesPlayed), 1);
 
-  const scored = pool.map((p) => ({
-    player: p,
-    priority: getPlayerPriorityScore(p, currentTime, maxGames),
-  }));
+  const ranked = pool
+    .map((p) => ({
+      player: p,
+      priority: getPlayerPriorityScore(p, currentTime, maxGames),
+    }))
+    .sort((a, b) => {
+      if (Math.abs(a.priority - b.priority) < 0.01) return rng() - 0.5;
+      return b.priority - a.priority;
+    });
 
-  scored.sort((a, b) => {
-    if (Math.abs(a.priority - b.priority) < 0.01) return rng() - 0.5;
-    return b.priority - a.priority;
-  });
+  // Take the top 8 most-deserving players as candidates.
+  // Priority ensures wait-time/games-played is respected;
+  // the larger pool gives the skill matcher room to find balance.
+  const candidates = ranked
+    .slice(0, Math.min(8, ranked.length))
+    .map((r) => r.player);
 
-  const top4 = scored.slice(0, 4).map((s) => s.player);
+  const n = candidates.length;
+  let bestScore = -Infinity;
+  let best: { teamA: Player[]; teamB: Player[] } | null = null;
 
-  const combos: Array<{
-    teamA: Player[];
-    teamB: Player[];
-    score: number;
-  }> = [];
+  // C(n,4) × 3 splits
+  for (let i = 0; i < n - 3; i++) {
+    for (let j = i + 1; j < n - 2; j++) {
+      for (let k = j + 1; k < n - 1; k++) {
+        for (let l = k + 1; l < n; l++) {
+          const four = [candidates[i], candidates[j], candidates[k], candidates[l]];
 
-  const indices = [0, 1, 2, 3];
-  for (let i = 0; i < indices.length; i++) {
-    for (let j = i + 1; j < indices.length; j++) {
-      const teamAPlayers = [top4[i], top4[j]];
-      const teamBPlayers = indices
-        .filter((idx) => idx !== i && idx !== j)
-        .map((idx) => top4[idx]);
+          // All 3 distinct 2v2 splits of 4 players
+          const splits: [[number, number], [number, number]][] = [
+            [[0, 1], [2, 3]],
+            [[0, 2], [1, 3]],
+            [[0, 3], [1, 2]],
+          ];
 
-      const partnerScore =
-        getPartnerDiversityScore(teamAPlayers[0], teamAPlayers[1]) +
-        getPartnerDiversityScore(teamBPlayers[0], teamBPlayers[1]);
-
-      const opponentScore = getOpponentDiversityScore(
-        teamAPlayers,
-        teamBPlayers
-      );
-
-      const skillScore = getSkillFitScore(
-        [...teamAPlayers, ...teamBPlayers],
-        session.rules.skillMatching
-      );
-
-      combos.push({
-        teamA: teamAPlayers,
-        teamB: teamBPlayers,
-        score: partnerScore * 0.4 + opponentScore * 0.3 + skillScore * 0.3,
-      });
+          for (const [[a0, a1], [b0, b1]] of splits) {
+            const teamA = [four[a0], four[a1]];
+            const teamB = [four[b0], four[b1]];
+            const s = scoreCombo(teamA, teamB, session, mode);
+            if (s > bestScore) {
+              bestScore = s;
+              best = { teamA, teamB };
+            }
+          }
+        }
+      }
     }
   }
 
-  combos.sort((a, b) => b.score - a.score);
-  const best = combos[0];
+  if (!best) return null;
 
   return {
     teamA: { playerIds: best.teamA.map((p) => p.id) },
@@ -122,7 +186,7 @@ function getBestTeamCombo(
 
 // ============================================
 // FAIR PLAY SCHEDULER
-// Pure fairness -- equal games for everyone
+// Equal games for everyone + best skill balance
 // ============================================
 
 function scheduleFairPlay(
@@ -136,7 +200,8 @@ function scheduleFairPlay(
     availablePlayers,
     session,
     currentTime,
-    rng
+    rng,
+    "FAIR_PLAY"
   );
   if (!combo) return null;
   return { courtId: court.id, teamA: combo.teamA, teamB: combo.teamB };
@@ -144,8 +209,8 @@ function scheduleFairPlay(
 
 // ============================================
 // WINNER VS WINNER SCHEDULER
-// Winners face winners, losers face losers
-// Teams remixed by skill within each pool
+// Winners face winners, losers face losers.
+// Within each pool, still picks for best balance.
 // ============================================
 
 function scheduleWinnerVsWinner(
@@ -155,42 +220,32 @@ function scheduleWinnerVsWinner(
   currentTime: number,
   rng: () => number
 ): CourtAssignment | null {
-  // Get last round match results
   const lastRoundMatches = session.matchHistory.filter(
     (m) => m.round === session.currentRound && m.result !== "PENDING"
   );
 
-  // Build winner and loser pools
   const winnerIds = new Set<string>();
   const loserIds = new Set<string>();
 
   for (const match of lastRoundMatches) {
     const winners =
-      match.result === "TEAM_A"
-        ? match.teamA.playerIds
-        : match.teamB.playerIds;
+      match.result === "TEAM_A" ? match.teamA.playerIds : match.teamB.playerIds;
     const losers =
-      match.result === "TEAM_A"
-        ? match.teamB.playerIds
-        : match.teamA.playerIds;
+      match.result === "TEAM_A" ? match.teamB.playerIds : match.teamA.playerIds;
     winners.forEach((id) => winnerIds.add(id));
     losers.forEach((id) => loserIds.add(id));
   }
 
-  const availableWinners = availablePlayers.filter((p) =>
-    winnerIds.has(p.id)
-  );
-  const availableLosers = availablePlayers.filter((p) =>
-    loserIds.has(p.id)
-  );
+  const availableWinners = availablePlayers.filter((p) => winnerIds.has(p.id));
+  const availableLosers = availablePlayers.filter((p) => loserIds.has(p.id));
 
-  // Try winners pool first, then losers, then fall back to fair play
   if (availableWinners.length >= 4) {
     const combo = getBestTeamCombo(
       availableWinners,
       session,
       currentTime,
-      rng
+      rng,
+      "FAIR_PLAY"
     );
     if (combo)
       return { courtId: court.id, teamA: combo.teamA, teamB: combo.teamB };
@@ -201,87 +256,41 @@ function scheduleWinnerVsWinner(
       availableLosers,
       session,
       currentTime,
-      rng
+      rng,
+      "FAIR_PLAY"
     );
     if (combo)
       return { courtId: court.id, teamA: combo.teamA, teamB: combo.teamB };
   }
 
-  // Fall back to fair play if pools are too small
   return scheduleFairPlay(court, availablePlayers, session, currentTime, rng);
 }
 
 // ============================================
 // SOCIAL ROTATION SCHEDULER
-// Maximize partner and opponent variety
+// Maximize partner + opponent variety.
+// Still applies light team balance so it's fun.
 // ============================================
 
 function scheduleSocial(
   court: Court,
   availablePlayers: Player[],
   session: Session,
-  _currentTime: number,
+  currentTime: number,
   rng: () => number
 ): CourtAssignment | null {
-  if (availablePlayers.length < 4) return null;
-
-  const maxGames = Math.max(...session.players.map((p) => p.gamesPlayed), 1);
-
-  // Score purely on diversity -- ignore priority score mostly
+  // Social uses a shuffled pool so variety beats strict priority.
+  // We still pass through getBestTeamCombo so balance is considered.
   const shuffled = seededShuffle([...availablePlayers], rng);
-  const top6 = shuffled.slice(0, Math.min(6, shuffled.length));
-
-  const combos: Array<{
-    teamA: Player[];
-    teamB: Player[];
-    score: number;
-  }> = [];
-
-  for (let i = 0; i < top6.length; i++) {
-    for (let j = i + 1; j < top6.length; j++) {
-      for (let k = 0; k < top6.length; k++) {
-        for (let l = k + 1; l < top6.length; l++) {
-          if (i === k || i === l || j === k || j === l) continue;
-          const teamA = [top6[i], top6[j]];
-          const teamB = [top6[k], top6[l]];
-
-          const partnerScore =
-            getPartnerDiversityScore(teamA[0], teamA[1]) +
-            getPartnerDiversityScore(teamB[0], teamB[1]);
-
-          const opponentScore = getOpponentDiversityScore(teamA, teamB);
-
-          const fairScore =
-            maxGames > 0
-              ? (2 -
-                  (teamA[0].gamesPlayed +
-                    teamA[1].gamesPlayed +
-                    teamB[0].gamesPlayed +
-                    teamB[1].gamesPlayed) /
-                    (maxGames * 4)) *
-                0.3
-              : 0;
-
-          combos.push({
-            teamA,
-            teamB,
-            score: partnerScore * 0.45 + opponentScore * 0.35 + fairScore,
-          });
-        }
-      }
-    }
-  }
-
-  if (combos.length === 0) return null;
-
-  combos.sort((a, b) => b.score - a.score);
-  const best = combos[0];
-
-  return {
-    courtId: court.id,
-    teamA: { playerIds: best.teamA.map((p) => p.id) },
-    teamB: { playerIds: best.teamB.map((p) => p.id) },
-  };
+  const combo = getBestTeamCombo(
+    shuffled,
+    session,
+    currentTime,
+    rng,
+    "SOCIAL"
+  );
+  if (!combo) return null;
+  return { courtId: court.id, teamA: combo.teamA, teamB: combo.teamB };
 }
 
 // ============================================
@@ -355,10 +364,7 @@ export function generateNextRound(input: SchedulerInput): SchedulerOutput {
   }
 
   const assignedIds = new Set(
-    assignments.flatMap((a) => [
-      ...a.teamA.playerIds,
-      ...a.teamB.playerIds,
-    ])
+    assignments.flatMap((a) => [...a.teamA.playerIds, ...a.teamB.playerIds])
   );
 
   const updatedPlayers = session.players.map((player) => {
@@ -420,16 +426,14 @@ export function recordMatchResult(
         : match.teamB.playerIds.filter((id) => id !== player.id);
 
     const opponents =
-      result === "TEAM_A"
-        ? match.teamB.playerIds
-        : match.teamA.playerIds;
+      result === "TEAM_A" ? match.teamB.playerIds : match.teamA.playerIds;
 
+    const isWinner = winningIds.has(player.id);
     return {
       ...player,
       gamesPlayed: player.gamesPlayed + 1,
-      gamesWon: winningIds.has(player.id)
-        ? player.gamesWon + 1
-        : player.gamesWon,
+      gamesWon: isWinner ? player.gamesWon + 1 : player.gamesWon,
+      winStreak: isWinner ? (player.winStreak ?? 0) + 1 : 0,
       attendanceStatus: "PRESENT" as const,
       waitingSince: currentTime,
       partners: [...player.partners, ...teammates],

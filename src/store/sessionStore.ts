@@ -6,6 +6,7 @@
 import { create } from "zustand";
 import { generateNextRound, recordMatchResult } from "../engine/scheduler";
 import { saveSession, updateSession, getRecentSessions } from "../db/sessionDB";
+import { saveSessionHistory } from "../db/historyDB";
 import type {
   Session,
   Player,
@@ -92,7 +93,7 @@ interface SessionStore {
 
   // Scheduler
   generateRound: () => void;
-  recordResult: (match: Match, result: "TEAM_A" | "TEAM_B") => Promise<void>;
+  recordResult: (match: Match, result: "TEAM_A" | "TEAM_B", scoreA?: number, scoreB?: number) => Promise<void>;
   applyAssignments: (assignments: CourtAssignment[]) => void;
 
   // Templates
@@ -215,6 +216,12 @@ endSession: async () => {
       state: "ENDED",
       endedAt: updated.endedAt,
     });
+    // Save per-player history before clearing
+    try {
+      await saveSessionHistory(updated);
+    } catch {
+      // non-fatal — history save failure shouldn't block ending the session
+    }
     set({ session: null, lastOutput: null });
   },
 
@@ -380,7 +387,7 @@ addPlayer: (playerData) => {
     updateSession(session.id, { courts: updatedCourts });
   },
 
-  recordResult: async (match, result) => {
+  recordResult: async (match, result, scoreA, scoreB) => {
     const { session } = get();
     if (!session) return;
 
@@ -394,6 +401,8 @@ addPlayer: (playerData) => {
     const completedMatch: Match = {
       ...match,
       result,
+      scoreA,
+      scoreB,
       endTime: Date.now(),
     };
 

@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { usePlayerStore } from "../../store/playerStore";
-import type { SkillTier } from "../../types";
+import type { SkillTier, Player } from "../../types";
 import { formatSkillRating, getActiveRating } from "../../types";
+import PlayerStatsModal from "./PlayerStatsModal";
 
 const TIERS: SkillTier[] = [
   "BEGINNER",
@@ -68,6 +69,7 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [statsPlayer, setStatsPlayer] = useState<Player | null>(null);
 
   // Edit form state
   const [editName, setEditName] = useState("");
@@ -140,6 +142,11 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+
+      {/* Player Stats Modal */}
+      {statsPlayer && (
+        <PlayerStatsModal player={statsPlayer} onClose={() => setStatsPlayer(null)} />
+      )}
 
       {/* Delete Confirm */}
       {deleteConfirmId && (
@@ -357,6 +364,15 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
                       <div className="flex items-center gap-1 flex-shrink-0">
                         {!isEditing && (
                           <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setStatsPlayer(player);
+                              }}
+                              className="text-xs px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-purple-100 text-gray-600 hover:text-purple-700 font-semibold transition-colors"
+                            >
+                              Stats
+                            </button>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
