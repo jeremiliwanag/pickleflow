@@ -10,8 +10,10 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  onSnapshot,
   query,
   orderBy,
+  type Unsubscribe,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import type { Player } from "../types";
@@ -19,16 +21,29 @@ import type { Player } from "../types";
 const PLAYERS_COLLECTION = "players";
 
 // ============================================
-// GET ALL PLAYERS
-// Returns the full permanent roster
+// SUBSCRIBE TO ROSTER (real-time)
+// Calls onChange whenever the roster changes
+// in Firestore -- on any device.
+// Returns an unsubscribe function.
+// ============================================
+
+export function subscribeToPlayers(
+  onChange: (players: Player[]) => void
+): Unsubscribe {
+  const q = query(collection(db, PLAYERS_COLLECTION), orderBy("name"));
+  return onSnapshot(q, (snapshot) => {
+    const players = snapshot.docs.map((d) => d.data() as Player);
+    onChange(players);
+  });
+}
+
+// ============================================
+// GET ALL PLAYERS (one-time, kept for compat)
 // ============================================
 
 export async function getAllPlayers(): Promise<Player[]> {
   try {
-    const q = query(
-      collection(db, PLAYERS_COLLECTION),
-      orderBy("name")
-    );
+    const q = query(collection(db, PLAYERS_COLLECTION), orderBy("name"));
     const snapshot = await getDocs(q);
     return snapshot.docs.map((doc) => doc.data() as Player);
   } catch (error) {
@@ -39,15 +54,11 @@ export async function getAllPlayers(): Promise<Player[]> {
 
 // ============================================
 // SAVE PLAYER
-// Creates or updates a player in the roster
 // ============================================
 
 export async function savePlayer(player: Player): Promise<void> {
   try {
-    await setDoc(
-      doc(db, PLAYERS_COLLECTION, player.id),
-      player
-    );
+    await setDoc(doc(db, PLAYERS_COLLECTION, player.id), player);
   } catch (error) {
     console.error("Error saving player:", error);
   }
@@ -55,7 +66,6 @@ export async function savePlayer(player: Player): Promise<void> {
 
 // ============================================
 // UPDATE PLAYER
-// Partial update -- only changes specified fields
 // ============================================
 
 export async function updatePlayer(
@@ -74,7 +84,6 @@ export async function updatePlayer(
 
 // ============================================
 // DELETE PLAYER
-// Removes player from permanent roster
 // ============================================
 
 export async function deletePlayer(playerId: string): Promise<void> {

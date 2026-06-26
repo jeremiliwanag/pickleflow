@@ -4,8 +4,9 @@
 // ============================================
 
 import { create } from "zustand";
-import { getAllPlayers, savePlayer, updatePlayer, deletePlayer } from "../db/playerDB";
+import { subscribeToPlayers, savePlayer, updatePlayer, deletePlayer } from "../db/playerDB";
 import type { Player, SkillTier, CommunityRating } from "../types";
+import type { Unsubscribe } from "firebase/firestore";
 
 function generateId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -15,9 +16,12 @@ interface PlayerStore {
   roster: Player[];
   loading: boolean;
   error: string | null;
+  _unsubscribe: Unsubscribe | null;
 
-  // Load all players from Firebase
-  loadRoster: () => Promise<void>;
+  // Subscribe to real-time roster updates
+  loadRoster: () => void;
+  // Unsubscribe from real-time listener (call on unmount)
+  unsubscribeRoster: () => void;
 
   // Add new player to roster
   addToRoster: (
@@ -58,15 +62,21 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   roster: [],
   loading: false,
   error: null,
+  _unsubscribe: null,
 
-  loadRoster: async () => {
+  loadRoster: () => {
+    // Cancel any existing subscription first
+    get()._unsubscribe?.();
     set({ loading: true, error: null });
-    try {
-      const players = await getAllPlayers();
+    const unsub = subscribeToPlayers((players) => {
       set({ roster: players, loading: false });
-    } catch (error) {
-      set({ error: "Failed to load players", loading: false });
-    }
+    });
+    set({ _unsubscribe: unsub });
+  },
+
+  unsubscribeRoster: () => {
+    get()._unsubscribe?.();
+    set({ _unsubscribe: null });
   },
 
   addToRoster: async (name, tier, division) => {
