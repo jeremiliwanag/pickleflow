@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { Player, SkillTier } from "../../types";
 import { formatSkillRating, getActiveRating } from "../../types";
 
@@ -72,11 +72,19 @@ export default function PlayerProfile({
   const [rateDivision, setRateDivision] = useState(3.0);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
+  const [submittedAtCount, setSubmittedAtCount] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeRating = getActiveRating(player.ratings);
   const communityCount = player.ratings.community?.length ?? 0;
+
+  // Clear the "submitted" confirmation once the count actually increases
+  const submitted = submittedAtCount !== null;
+  useEffect(() => {
+    if (submittedAtCount !== null && communityCount > submittedAtCount) {
+      setSubmittedAtCount(null);
+    }
+  }, [communityCount, submittedAtCount]);
   const winRate =
     player.gamesPlayed > 0
       ? Math.round((player.gamesWon / player.gamesPlayed) * 100)
@@ -105,8 +113,8 @@ export default function PlayerProfile({
   };
 
   const handleSubmitRating = () => {
-    onRatePlayer(rateTier, rateDivision);
-    setSubmitted(true);
+    void onRatePlayer(rateTier, rateDivision);
+    setSubmittedAtCount(communityCount);
   };
 
   return (

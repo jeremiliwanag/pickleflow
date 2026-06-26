@@ -24,11 +24,18 @@ export default function MainDashboard() {
 
   const addCommunityRating = usePlayerStore((s) => s.addCommunityRating);
   const updatePlayerPhoto = usePlayerStore((s) => s.updatePlayerPhoto);
+  const updateSessionPlayer = useSessionStore((s) => s.updatePlayer);
 
   const [_replacing, setReplacing] = useState<string | null>(null);
-  const [profilePlayer, setProfilePlayer] = useState<Player | null>(null);
+  const [profilePlayerId, setProfilePlayerId] = useState<string | null>(null);
 
   if (!session) return null;
+
+  // Always derive live from session so community ratings update without re-opening
+  const profilePlayer: Player | null =
+    profilePlayerId
+      ? (session.players.find((p) => p.id === profilePlayerId) ?? null)
+      : null;
 
   const handleRecordWinner = (match: Match, result: "TEAM_A" | "TEAM_B") => {
     recordResult(match, result);
@@ -96,13 +103,18 @@ export default function MainDashboard() {
       {profilePlayer && (
         <PlayerProfile
           player={profilePlayer}
-          onClose={() => setProfilePlayer(null)}
-          onRatePlayer={(tier, division) => {
-            void addCommunityRating(profilePlayer.id, tier, division);
+          onClose={() => setProfilePlayerId(null)}
+          onRatePlayer={async (tier, division) => {
+            await addCommunityRating(profilePlayer.id, tier, division);
+            // Sync community ratings from roster back into the session player
+            const { roster } = usePlayerStore.getState();
+            const updated = roster.find((p) => p.id === profilePlayer.id);
+            if (updated) updateSessionPlayer(profilePlayer.id, { ratings: updated.ratings });
           }}
           onPhotoUpload={async (file) => {
             const url = await uploadPlayerPhoto(profilePlayer.id, file);
             await updatePlayerPhoto(profilePlayer.id, url);
+            updateSessionPlayer(profilePlayer.id, { photoURL: url });
           }}
         />
       )}
@@ -115,8 +127,16 @@ export default function MainDashboard() {
         onPlayerStatusChange={handlePlayerStatusChange}
         onAddPlayer={handleAddPlayer}
         onDeletePlayer={handleDeletePlayer}
-        onAddCommunityRating={addCommunityRating}
-        onUpdatePlayerPhoto={updatePlayerPhoto}
+        onAddCommunityRating={async (playerId, tier, division) => {
+          await addCommunityRating(playerId, tier, division);
+          const { roster } = usePlayerStore.getState();
+          const updated = roster.find((p) => p.id === playerId);
+          if (updated) updateSessionPlayer(playerId, { ratings: updated.ratings });
+        }}
+        onUpdatePlayerPhoto={async (playerId, photoURL) => {
+          await updatePlayerPhoto(playerId, photoURL);
+          updateSessionPlayer(playerId, { photoURL });
+        }}
       />
 
       <div className="flex-1 p-6 overflow-y-auto h-screen">
@@ -146,7 +166,7 @@ export default function MainDashboard() {
               onRecordWinner={handleRecordWinner}
               onReplacePlayer={handleReplacePlayer}
               onModeChange={(mode) => handleModeChange(court.id, mode)}
-              onPlayerClick={setProfilePlayer}
+              onPlayerClick={(p) => setProfilePlayerId(p.id)}
             />
           ))}
 
@@ -171,7 +191,7 @@ export default function MainDashboard() {
                       teamA={assignment.teamA.playerIds}
                       teamB={assignment.teamB.playerIds}
                       onReplacePlayer={handleReplacePlayer}
-                      onPlayerClick={setProfilePlayer}
+                      onPlayerClick={(p) => setProfilePlayerId(p.id)}
                     />
                   );
                 })}
