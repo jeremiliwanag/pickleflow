@@ -11,7 +11,11 @@ interface PlayerProfileProps {
   onUpdateSelfRating?: (tier: SkillTier, division: number) => Promise<void>;
   /** Roster-only: allow editing the player's name */
   onUpdateName?: (name: string) => Promise<void>;
+  /** Admin: clear all community ratings */
+  onResetCommunityRatings?: () => Promise<void>;
 }
+
+const ADMIN_PIN = "1234";
 
 const TIERS: SkillTier[] = ["BEGINNER", "NOVICE", "INTERMEDIATE", "ADVANCED", "ELITE"];
 
@@ -68,6 +72,7 @@ export default function PlayerProfile({
   onPhotoUpload,
   onUpdateSelfRating,
   onUpdateName,
+  onResetCommunityRatings,
 }: PlayerProfileProps) {
   const [rateTier, setRateTier] = useState<SkillTier>("INTERMEDIATE");
   const [rateDivision, setRateDivision] = useState(3.0);
@@ -88,6 +93,13 @@ export default function PlayerProfile({
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(player.name);
   const [nameSaving, setNameSaving] = useState(false);
+
+  // Admin PIN for resetting community ratings
+  const [showPinEntry, setShowPinEntry] = useState(false);
+  const [pinValue, setPinValue] = useState("");
+  const [pinError, setPinError] = useState(false);
+  const [resetSaving, setResetSaving] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
 
   const activeRating = getActiveRating(player.ratings);
   const communityCount = player.ratings.community?.length ?? 0;
@@ -323,14 +335,75 @@ export default function PlayerProfile({
 
         {/* ── Community Rating ── */}
         <div className="px-8 py-6">
-          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-5">
-            Rate This Player
-          </p>
+          <div className="flex items-center justify-between mb-5">
+            <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+              Rate This Player
+            </p>
+            {/* Admin reset button — only shown when there are ratings to clear */}
+            {onResetCommunityRatings && communityCount > 0 && !showPinEntry && (
+              <button
+                onClick={() => { setShowPinEntry(true); setPinValue(""); setPinError(false); setResetDone(false); }}
+                className="text-xs px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 hover:text-red-700 font-semibold border border-red-100 transition-colors"
+              >
+                Reset ratings
+              </button>
+            )}
+          </div>
 
-          {communityCount >= 5 ? (
+          {/* PIN entry modal-within-panel */}
+          {showPinEntry && (
+            <div className="mb-5 bg-red-50 border border-red-100 rounded-2xl p-5">
+              <p className="text-sm font-black text-gray-900 mb-1">Admin PIN required</p>
+              <p className="text-xs text-gray-400 mb-4">
+                Enter the 4-digit admin PIN to clear all {communityCount} community rating{communityCount !== 1 ? "s" : ""} for {player.name}.
+              </p>
+              <div className="flex gap-2 mb-3">
+                <input
+                  type="password"
+                  maxLength={4}
+                  value={pinValue}
+                  onChange={(e) => { setPinValue(e.target.value.replace(/\D/g, "").slice(0, 4)); setPinError(false); }}
+                  placeholder="••••"
+                  autoFocus
+                  className={`w-24 text-center text-xl font-black tracking-widest border-2 rounded-xl px-3 py-2 focus:outline-none ${pinError ? "border-red-400 bg-red-50" : "border-gray-200 focus:border-red-400"}`}
+                />
+                <button
+                  disabled={pinValue.length < 4 || resetSaving}
+                  onClick={async () => {
+                    if (pinValue !== ADMIN_PIN) { setPinError(true); setPinValue(""); return; }
+                    setResetSaving(true);
+                    await onResetCommunityRatings!();
+                    setResetSaving(false);
+                    setShowPinEntry(false);
+                    setResetDone(true);
+                  }}
+                  className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-sm transition-colors disabled:opacity-50"
+                >
+                  {resetSaving ? "Clearing…" : "Confirm Reset"}
+                </button>
+                <button
+                  onClick={() => setShowPinEntry(false)}
+                  className="px-4 py-2 rounded-xl bg-white border-2 border-gray-200 text-gray-600 font-bold text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+              {pinError && (
+                <p className="text-red-500 text-xs font-semibold">Incorrect PIN. Try again.</p>
+              )}
+            </div>
+          )}
+
+          {resetDone && (
+            <div className="mb-5 bg-emerald-50 border border-emerald-100 rounded-2xl p-4 text-center">
+              <p className="text-emerald-700 font-black text-sm">✓ Community ratings cleared</p>
+            </div>
+          )}
+
+          {communityCount >= 10 ? (
             <div className="bg-gray-50 rounded-2xl p-6 text-center">
               <p className="text-2xl mb-2">⭐⭐⭐⭐⭐</p>
-              <p className="text-gray-500 text-sm font-medium">Maximum community ratings reached</p>
+              <p className="text-gray-500 text-sm font-medium">Maximum community ratings reached (10/10)</p>
             </div>
           ) : submitted ? (
             <div className="bg-emerald-50 rounded-2xl p-6 text-center border border-emerald-100">
@@ -381,7 +454,7 @@ export default function PlayerProfile({
                 Submit Rating
               </button>
               <p className="text-xs text-gray-400 text-center">
-                Anonymous · {5 - communityCount} rating{5 - communityCount !== 1 ? "s" : ""} remaining
+                Anonymous · {10 - communityCount} rating{10 - communityCount !== 1 ? "s" : ""} remaining
               </p>
             </div>
           )}

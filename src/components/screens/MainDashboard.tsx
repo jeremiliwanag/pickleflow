@@ -26,6 +26,7 @@ export default function MainDashboard() {
   const addCommunityRating = usePlayerStore((s) => s.addCommunityRating);
   const updatePlayerPhoto = usePlayerStore((s) => s.updatePlayerPhoto);
   const updateRating = usePlayerStore((s) => s.updateRating);
+  const resetCommunityRatings = usePlayerStore((s) => s.resetCommunityRatings);
   const addToRoster = usePlayerStore((s) => s.addToRoster);
   const updateSessionPlayer = useSessionStore((s) => s.updatePlayer);
 
@@ -137,6 +138,12 @@ export default function MainDashboard() {
             const updated = roster.find((p) => p.id === profilePlayer.id);
             if (updated) updateSessionPlayer(profilePlayer.id, { ratings: updated.ratings });
           }}
+          onResetCommunityRatings={async () => {
+            await resetCommunityRatings(profilePlayer.id);
+            const { roster } = usePlayerStore.getState();
+            const updated = roster.find((p) => p.id === profilePlayer.id);
+            if (updated) updateSessionPlayer(profilePlayer.id, { ratings: updated.ratings });
+          }}
         />
       )}
 
@@ -160,6 +167,12 @@ export default function MainDashboard() {
         }}
         onUpdateSelfRating={async (playerId, tier, division) => {
           await updateRating(playerId, "self", tier, division);
+          const { roster } = usePlayerStore.getState();
+          const updated = roster.find((p) => p.id === playerId);
+          if (updated) updateSessionPlayer(playerId, { ratings: updated.ratings });
+        }}
+        onResetCommunityRatings={async (playerId) => {
+          await resetCommunityRatings(playerId);
           const { roster } = usePlayerStore.getState();
           const updated = roster.find((p) => p.id === playerId);
           if (updated) updateSessionPlayer(playerId, { ratings: updated.ratings });

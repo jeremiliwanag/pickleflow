@@ -56,6 +56,9 @@ interface PlayerStore {
 
   // Update player photo URL
   updatePlayerPhoto: (playerId: string, photoURL: string) => Promise<void>;
+
+  // Admin: clear all community ratings for a player
+  resetCommunityRatings: (playerId: string) => Promise<void>;
 }
 
 export const usePlayerStore = create<PlayerStore>((set, get) => ({
@@ -151,7 +154,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     const player = roster.find((p) => p.id === playerId);
     if (!player) return;
     const existingCommunity = player.ratings.community ?? [];
-    if (existingCommunity.length >= 5) return;
+    if (existingCommunity.length >= 10) return;
 
     const newRating: CommunityRating = {
       id: `cr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -171,4 +174,12 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     await get().updateRosterPlayer(playerId, { photoURL });
   },
 
+  resetCommunityRatings: async (playerId) => {
+    const { roster } = get();
+    const player = roster.find((p) => p.id === playerId);
+    if (!player) return;
+    await get().updateRosterPlayer(playerId, {
+      ratings: { ...player.ratings, community: [] },
+    });
+  },
 }));

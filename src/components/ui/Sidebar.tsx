@@ -35,6 +35,7 @@ interface SidebarProps {
     tier: SkillTier,
     division: number
   ) => Promise<void>;
+  onResetCommunityRatings?: (playerId: string) => Promise<void>;
 }
 
 export default function Sidebar({
@@ -48,6 +49,7 @@ export default function Sidebar({
   onAddCommunityRating,
   onUpdatePlayerPhoto,
   onUpdateSelfRating,
+  onResetCommunityRatings,
 }: SidebarProps) {
   const fairness = getSessionFairnessScore(session);
   const [showPicker, setShowPicker] = useState(false);
@@ -138,6 +140,11 @@ export default function Sidebar({
               ? async (tier, division) => {
                   await onUpdateSelfRating(profilePlayer.id, tier, division);
                 }
+              : undefined
+          }
+          onResetCommunityRatings={
+            onResetCommunityRatings
+              ? async () => { await onResetCommunityRatings(profilePlayer.id); }
               : undefined
           }
         />

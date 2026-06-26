@@ -151,6 +151,13 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
           onUpdateName={async (name) => {
             await updateRosterPlayer(liveProfilePlayer.id, { name });
           }}
+          onResetCommunityRatings={async () => {
+            const player = roster.find((p) => p.id === liveProfilePlayer.id);
+            if (!player) return;
+            await updateRosterPlayer(liveProfilePlayer.id, {
+              ratings: { ...player.ratings, community: [] },
+            });
+          }}
         />
       )}
 
