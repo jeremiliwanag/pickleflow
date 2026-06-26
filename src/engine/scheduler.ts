@@ -13,6 +13,7 @@ import type {
   CourtAssignment,
   SchedulerInput,
   SchedulerOutput,
+  RotationMode,
 } from "../types";
 
 import {
@@ -364,7 +365,8 @@ function selectTightestFour(candidates: Player[]): Player[] | null {
 function selectFourPlayers(
   eligible: Player[],
   session: Session,
-  currentTime: number
+  currentTime: number,
+  rotationMode?: RotationMode
 ): Player[] | null {
   if (eligible.length < 4) return null;
 
@@ -373,21 +375,27 @@ function selectFourPlayers(
   const hasPriority = (p: Player) =>
     p.priority === true && (p.priorityGamesLeft ?? 0) > 0;
 
-  // Separate into tiers
-  const priorityPlayers = eligible.filter(hasPriority);
-  const restPlayers = eligible.filter(
-    (p) => !hasPriority(p) && p.consecutiveGames === 0
-  );
-  const consecutivePlayers = eligible.filter(
-    (p) => !hasPriority(p) && p.consecutiveGames > 0
-  );
+  // W vs W keeps winners on court — skip the consecutive rule there.
+  // For Fair Play / Social: hard back-to-back rule (consecutive players only
+  // enter the pool when there aren't enough fresh players to fill 4 spots).
+  let pool: Player[];
+  if (rotationMode === "WINNER_VS_WINNER") {
+    pool = eligible;
+  } else {
+    const priorityPlayers = eligible.filter(hasPriority);
+    const restPlayers = eligible.filter(
+      (p) => !hasPriority(p) && p.consecutiveGames === 0
+    );
+    const consecutivePlayers = eligible.filter(
+      (p) => !hasPriority(p) && p.consecutiveGames > 0
+    );
 
-  // Hard back-to-back rule: only include consecutive players if we must
-  const primaryPool = [...priorityPlayers, ...restPlayers];
-  const pool =
-    primaryPool.length >= 4
-      ? primaryPool
-      : [...primaryPool, ...consecutivePlayers];
+    const primaryPool = [...priorityPlayers, ...restPlayers];
+    pool =
+      primaryPool.length >= 4
+        ? primaryPool
+        : [...primaryPool, ...consecutivePlayers];
+  }
 
   if (pool.length < 4) return null;
 
@@ -522,7 +530,7 @@ export function generateMatchForCourt(
   );
 
   // Stage 1: who plays?
-  const four = selectFourPlayers(eligible, session, currentTime);
+  const four = selectFourPlayers(eligible, session, currentTime, court.rotationMode);
   if (!four) return null;
 
   // Stage 2: how are they paired?
@@ -677,7 +685,7 @@ export function recordMatchResult(
       winStreak: isWinner ? (player.winStreak ?? 0) + 1 : 0,
       attendanceStatus: "PRESENT" as const,
       waitingSince: currentTime,
-      consecutiveGames: isWinner ? player.consecutiveGames : 0,
+      consecutiveGames: player.consecutiveGames, // reset to 0 happens in startMatch when they sit out
       priority,
       priorityGamesLeft,
       partners: [...player.partners, ...teammates],

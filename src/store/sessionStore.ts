@@ -406,16 +406,21 @@ addPlayer: (playerData) => {
       return;
     }
 
-    const updatedPlayers = session.players.map((p) =>
-      assignedIds.has(p.id)
-        ? {
-            ...p,
-            attendanceStatus: "PLAYING" as const,
-            consecutiveGames: p.consecutiveGames + 1,
-            waitingSince: null,
-          }
-        : p
-    );
+    const updatedPlayers = session.players.map((p) => {
+      if (assignedIds.has(p.id)) {
+        return {
+          ...p,
+          attendanceStatus: "PLAYING" as const,
+          consecutiveGames: p.consecutiveGames + 1,
+          waitingSince: null,
+        };
+      }
+      // Players sitting out this round reset their consecutive streak
+      if (p.attendanceStatus === "PRESENT" || p.attendanceStatus === "WAITING") {
+        return { ...p, consecutiveGames: 0 };
+      }
+      return p;
+    });
 
     const updated = {
       ...session,

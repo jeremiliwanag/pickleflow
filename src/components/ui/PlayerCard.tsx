@@ -111,7 +111,7 @@ export default function PlayerCard({
             ).map((s) => (
               <button
                 key={s}
-                onClick={() => onStatusChange(s)}
+                onClick={(e) => { e.stopPropagation(); onStatusChange(s); }}
                 className={`text-xs px-2 py-0.5 rounded-lg border transition-colors font-medium ${
                   player.attendanceStatus === s
                     ? "bg-white text-green-900 border-white"
