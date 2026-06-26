@@ -119,7 +119,7 @@ export default function Sidebar({
   };
 
   return (
-    <div className="w-96 h-screen sticky top-0 bg-green-900 text-white flex flex-col flex-shrink-0 overflow-hidden">
+    <div className="w-96 h-screen sticky top-0 z-10 bg-green-900 text-white flex flex-col flex-shrink-0 overflow-hidden">
 
       {/* Player Profile Panel */}
       {profilePlayer && (
