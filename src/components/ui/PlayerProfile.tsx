@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { Player, SkillTier } from "../../types";
 import { formatSkillRating, getActiveRating } from "../../types";
+import PhotoCropModal from "./PhotoCropModal";
 
 interface PlayerProfileProps {
   player: Player;
@@ -73,6 +74,7 @@ export default function PlayerProfile({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [submittedAtCount, setSubmittedAtCount] = useState<number | null>(null);
+  const [cropFile, setCropFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Admin self-rating edit
@@ -108,20 +110,44 @@ export default function PlayerProfile({
     ? Math.round((player.gamesWon / player.gamesPlayed) * 100)
     : null;
 
-  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadError(null);
-    if (file.size > 1024 * 1024) { setUploadError("File must be 1MB or less"); return; }
-    if (!["image/jpeg", "image/png"].includes(file.type)) { setUploadError("Only JPEG and PNG"); return; }
+    // Show cropper first — no size check yet, user may zoom/crop it down
+    if (!["image/jpeg", "image/png"].includes(file.type)) {
+      setUploadError("Only JPEG and PNG files are accepted");
+      return;
+    }
+    setCropFile(file);
+    // Reset input so the same file can be re-selected after cancel
+    e.target.value = "";
+  };
+
+  const handleCropConfirm = async (blob: Blob) => {
+    setCropFile(null);
     setUploading(true);
-    try { await onPhotoUpload(file); }
-    catch { setUploadError("Upload failed. Please try again."); }
-    finally { setUploading(false); }
+    try {
+      const croppedFile = new File([blob], "photo.jpg", { type: "image/jpeg" });
+      await onPhotoUpload(croppedFile);
+    } catch {
+      setUploadError("Upload failed. Please try again.");
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
     <>
+      {/* Photo crop modal */}
+      {cropFile && (
+        <PhotoCropModal
+          file={cropFile}
+          onConfirm={handleCropConfirm}
+          onCancel={() => setCropFile(null)}
+        />
+      )}
+
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
 
