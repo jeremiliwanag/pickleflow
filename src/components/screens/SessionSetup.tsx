@@ -5,9 +5,10 @@ import Card from "../ui/Card";
 
 interface SessionSetupProps {
   onStart: () => void;
+  onShowHistory: () => void;
 }
 
-export default function SessionSetup({ onStart }: SessionSetupProps) {
+export default function SessionSetup({ onStart, onShowHistory }: SessionSetupProps) {
   const { createSession, session, updateCourt, startSession } =
     useSessionStore();
   const [name, setName] = useState("Friday Game");
@@ -24,9 +25,17 @@ const handleStart = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 max-w-lg mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-green-700">PickleFlow</h1>
-        <p className="text-gray-500 text-sm">Session Setup</p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-green-700">PickleFlow</h1>
+          <p className="text-gray-500 text-sm">Session Setup</p>
+        </div>
+        <button
+          onClick={onShowHistory}
+          className="text-sm px-4 py-2 rounded-xl bg-white border-2 border-gray-200 hover:border-gray-300 text-gray-600 font-bold transition-colors shadow-sm"
+        >
+          📋 History
+        </button>
       </div>
 
       <Card className="mb-4">

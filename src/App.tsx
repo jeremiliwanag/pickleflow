@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
 import SessionSetup from "./components/screens/SessionSetup";
 import MainDashboard from "./components/screens/MainDashboard";
+import SessionHistory from "./components/screens/SessionHistory";
 import { useSessionStore } from "./store/sessionStore";
 
 type Screen = "setup" | "dashboard";
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("setup");
+  const [showHistory, setShowHistory] = useState(false);
   const [loading, setLoading] = useState(true);
   const { loadLatestSession, session } = useSessionStore();
 
@@ -44,9 +46,13 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50">
       {screen === "setup" && (
-        <SessionSetup onStart={() => setScreen("dashboard")} />
+        <SessionSetup
+          onStart={() => setScreen("dashboard")}
+          onShowHistory={() => setShowHistory(true)}
+        />
       )}
       {screen === "dashboard" && <MainDashboard />}
+      {showHistory && <SessionHistory onClose={() => setShowHistory(false)} />}
     </div>
   );
 }

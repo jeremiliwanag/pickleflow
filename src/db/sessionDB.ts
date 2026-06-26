@@ -9,6 +9,7 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   query,
   orderBy,
   limit,
@@ -62,6 +63,14 @@ export async function saveSession(session: Session): Promise<void> {
 // UPDATE SESSION
 // Partial update for session fields
 // ============================================
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, SESSIONS_COLLECTION, sessionId));
+  } catch (error) {
+    console.error("Error deleting session:", error);
+  }
+}
 
 export async function updateSession(
   sessionId: string,
