@@ -3,10 +3,10 @@ import { useSessionStore } from "../../store/sessionStore";
 import Sidebar from "../ui/Sidebar";
 import CourtCard from "../ui/CourtCard";
 import Button from "../ui/Button";
-import type { Match, SkillTier } from "../../types";
+import type { Match, SkillTier, RotationMode } from "../../types";
 
 export default function MainDashboard() {
-const session = useSessionStore((s) => s.session);
+  const session = useSessionStore((s) => s.session);
   const generateRound = useSessionStore((s) => s.generateRound);
   const recordResult = useSessionStore((s) => s.recordResult);
   const applyAssignments = useSessionStore((s) => s.applyAssignments);
@@ -19,7 +19,7 @@ const session = useSessionStore((s) => s.session);
   const removePlayer = useSessionStore((s) => s.removePlayer);
   const updateCourt = useSessionStore((s) => s.updateCourt);
 
-const [_replacing, setReplacing] = useState<string | null>(null);
+  const [_replacing, setReplacing] = useState<string | null>(null);
 
   if (!session) return null;
 
@@ -75,6 +75,13 @@ const [_replacing, setReplacing] = useState<string | null>(null);
     setReplacing(playerId);
   };
 
+  const handleModeChange = (courtId: string, mode: RotationMode) => {
+    updateCourt(courtId, {
+      rotationMode: mode,
+      backToBackPolicy: mode === "FAIR_PLAY" ? "STRICT" : "ALLOWED",
+    });
+  };
+
   const activeCourts = session.courts.filter((c) => c.isActive);
 
   return (
@@ -115,6 +122,7 @@ const [_replacing, setReplacing] = useState<string | null>(null);
               players={session.players}
               onRecordWinner={handleRecordWinner}
               onReplacePlayer={handleReplacePlayer}
+              onModeChange={(mode) => handleModeChange(court.id, mode)}
             />
           ))}
 
