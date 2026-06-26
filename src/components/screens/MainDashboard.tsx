@@ -13,6 +13,7 @@ export default function MainDashboard() {
   const generateMatchForCourt = useSessionStore((s) => s.generateMatchForCourt);
   const startMatch = useSessionStore((s) => s.startMatch);
   const replacePlayerInPending = useSessionStore((s) => s.replacePlayerInPending);
+  const replacePlayerInCurrent = useSessionStore((s) => s.replacePlayerInCurrent);
   const setPriority = useSessionStore((s) => s.setPriority);
   const recordResult = useSessionStore((s) => s.recordResult);
   const pauseSession = useSessionStore((s) => s.pauseSession);
@@ -175,9 +176,21 @@ export default function MainDashboard() {
               rules={session.rules}
               onGenerate={() => generateMatchForCourt(court.id)}
               onStartMatch={() => startMatch(court.id)}
-              onReplacePlayer={(outId, inId) =>
-                replacePlayerInPending(court.id, outId, inId)
-              }
+              onReplacePlayer={(outId, inId) => {
+                // Route to the right action based on which section owns outId
+                const c = session.courts.find((c) => c.id === court.id);
+                const inReadyCurrent =
+                  c?.currentMatch?.startTime === null &&
+                  [
+                    ...(c.currentMatch?.teamA.playerIds ?? []),
+                    ...(c.currentMatch?.teamB.playerIds ?? []),
+                  ].includes(outId);
+                if (inReadyCurrent) {
+                  replacePlayerInCurrent(court.id, outId, inId);
+                } else {
+                  replacePlayerInPending(court.id, outId, inId);
+                }
+              }}
               onRecordWinner={handleRecordWinner}
               onModeChange={(mode) => handleModeChange(court.id, mode)}
               onPlayerClick={(p) => setProfilePlayerId(p.id)}

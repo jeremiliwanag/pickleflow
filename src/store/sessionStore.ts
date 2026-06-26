@@ -100,6 +100,7 @@ interface SessionStore {
   generateMatchForCourt: (courtId: string) => void;
   startMatch: (courtId: string) => void;
   replacePlayerInPending: (courtId: string, outId: string, inId: string) => void;
+  replacePlayerInCurrent: (courtId: string, outId: string, inId: string) => void;
   setPriority: (playerId: string, enabled: boolean) => void;
   recordResult: (match: Match, result: "TEAM_A" | "TEAM_B", scoreA?: number, scoreB?: number) => Promise<void>;
   // Legacy — kept for tests and backward compat
@@ -363,33 +364,47 @@ addPlayer: (playerData) => {
     if (!session) return;
 
     const court = session.courts.find((c) => c.id === courtId);
-    if (!court?.pendingAssignment) return;
+    if (!court) return;
 
-    const pa = court.pendingAssignment;
-    const assignedIds = new Set([
-      ...pa.teamA.playerIds,
-      ...pa.teamB.playerIds,
-    ]);
-
-    const newRound = session.currentRound + 1;
     const now = Date.now();
+    const newRound = session.currentRound + 1;
 
-    const match: Match = {
-      id: generateId("match"),
-      courtId,
-      teamA: pa.teamA,
-      teamB: pa.teamB,
-      result: "PENDING",
-      startTime: now,
-      endTime: null,
-      round: newRound,
-    };
+    let updatedCourts: Court[];
+    let assignedIds: Set<string>;
 
-    const updatedCourts = session.courts.map((c) =>
-      c.id === courtId
-        ? { ...c, currentMatch: match, pendingAssignment: null }
-        : c
-    );
+    if (court.currentMatch && court.currentMatch.startTime === null && court.currentMatch.result === "PENDING") {
+      // Case A: start a Ready current match (promoted from previous pending)
+      assignedIds = new Set([
+        ...court.currentMatch.teamA.playerIds,
+        ...court.currentMatch.teamB.playerIds,
+      ]);
+      updatedCourts = session.courts.map((c) =>
+        c.id === courtId
+          ? { ...c, currentMatch: { ...court.currentMatch!, startTime: now }, }
+          : c
+      );
+    } else if (court.pendingAssignment) {
+      // Case B: start a fresh pending assignment (first match on this court)
+      const pa = court.pendingAssignment;
+      assignedIds = new Set([...pa.teamA.playerIds, ...pa.teamB.playerIds]);
+      const match: Match = {
+        id: generateId("match"),
+        courtId,
+        teamA: pa.teamA,
+        teamB: pa.teamB,
+        result: "PENDING",
+        startTime: now,
+        endTime: null,
+        round: newRound,
+      };
+      updatedCourts = session.courts.map((c) =>
+        c.id === courtId
+          ? { ...c, currentMatch: match, pendingAssignment: null }
+          : c
+      );
+    } else {
+      return;
+    }
 
     const updatedPlayers = session.players.map((p) =>
       assignedIds.has(p.id)
@@ -434,6 +449,30 @@ addPlayer: (playerData) => {
 
     const updatedCourts = session.courts.map((c) =>
       c.id === courtId ? { ...c, pendingAssignment: updatedAssignment } : c
+    );
+
+    const updated = { ...session, courts: updatedCourts };
+    set({ session: updated });
+    updateSession(session.id, { courts: updatedCourts });
+  },
+
+  replacePlayerInCurrent: (courtId, outId, inId) => {
+    const { session } = get();
+    if (!session) return;
+
+    const court = session.courts.find((c) => c.id === courtId);
+    if (!court?.currentMatch || court.currentMatch.startTime !== null) return;
+
+    const replace = (ids: string[]) => ids.map((id) => (id === outId ? inId : id));
+
+    const updatedMatch: Match = {
+      ...court.currentMatch,
+      teamA: { playerIds: replace(court.currentMatch.teamA.playerIds) },
+      teamB: { playerIds: replace(court.currentMatch.teamB.playerIds) },
+    };
+
+    const updatedCourts = session.courts.map((c) =>
+      c.id === courtId ? { ...c, currentMatch: updatedMatch } : c
     );
 
     const updated = { ...session, courts: updatedCourts };
@@ -512,69 +551,51 @@ addPlayer: (playerData) => {
 
     const now = Date.now();
 
-    // Update player stats (gamesPlayed, gamesWon, partners, opponents, consecutiveGames, etc.)
+    // Update stats for players who just finished
     const statsUpdatedPlayers = recordMatchResult(session, match, result, now);
 
     const completedMatch: Match = { ...match, result, scoreA, scoreB, endTime: now };
 
-    // Find the court for this match
+    // Find the pending next match (if any) to promote to Ready state
     const thisCourt = session.courts.find((c) => c.currentMatch?.id === match.id);
     const pa = thisCourt?.pendingAssignment ?? null;
 
-    // If there's a pending next match, auto-start it
-    let newCurrentMatch: Match | null = null;
-    let playersAfterAutoStart = statsUpdatedPlayers;
-
-    if (pa) {
-      const assignedIds = new Set([...pa.teamA.playerIds, ...pa.teamB.playerIds]);
-      newCurrentMatch = {
-        id: generateId("match"),
-        courtId: match.courtId,
-        teamA: pa.teamA,
-        teamB: pa.teamB,
-        result: "PENDING",
-        startTime: now,
-        endTime: null,
-        round: session.currentRound + 1,
-      };
-      // Set newly-starting players to PLAYING
-      playersAfterAutoStart = statsUpdatedPlayers.map((p) =>
-        assignedIds.has(p.id)
-          ? {
-              ...p,
-              attendanceStatus: "PLAYING" as const,
-              consecutiveGames: p.consecutiveGames + 1,
-              waitingSince: null,
-            }
-          : p
-      );
-    }
+    // Promote pending → Ready current match (startTime: null = not yet started)
+    // Players stay PRESENT/WAITING — organizer can still replace before pressing Start Match
+    const promotedMatch: Match | null = pa
+      ? {
+          id: generateId("match"),
+          courtId: match.courtId,
+          teamA: pa.teamA,
+          teamB: pa.teamB,
+          result: "PENDING",
+          startTime: null, // Ready state — timer hasn't started
+          endTime: null,
+          round: session.currentRound + 1,
+        }
+      : null;
 
     const updatedCourts = session.courts.map((court) => {
       if (court.currentMatch?.id !== match.id) return court;
       return {
         ...court,
-        currentMatch: newCurrentMatch,
-        pendingAssignment: null, // consumed — we'll auto-generate a new one below
+        currentMatch: promotedMatch,
+        pendingAssignment: null,
       };
     });
 
-    const newRound = newCurrentMatch ? session.currentRound + 1 : session.currentRound;
-
     const updated: Session = {
       ...session,
-      players: playersAfterAutoStart,
+      players: statsUpdatedPlayers,
       courts: updatedCourts,
       matchHistory: [...session.matchHistory, completedMatch],
-      currentRound: newRound,
     };
 
     set({ session: updated });
     await updateSession(session.id, {
-      players: playersAfterAutoStart,
+      players: statsUpdatedPlayers,
       courts: updatedCourts,
       matchHistory: updated.matchHistory,
-      currentRound: newRound,
     });
 
     // Auto-generate a new Next Match for this court
