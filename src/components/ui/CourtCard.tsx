@@ -38,13 +38,23 @@ export default function CourtCard({
 
   const getPlayer = (id: string) => players.find((p) => p.id === id);
 
-  const modeLabel =
-    court.rotationMode === "FAIR_PLAY" ? "Fair Play" : "Winner Stays";
+const modeLabel =
+    court.rotationMode === "FAIR_PLAY"
+      ? "Fair Play"
+      : court.rotationMode === "WINNER_VS_WINNER"
+      ? "W vs W"
+      : court.rotationMode === "SOCIAL"
+      ? "Social"
+      : "Fair Play";
 
-  const modeBadge =
+const modeBadge =
     court.rotationMode === "FAIR_PLAY"
       ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-      : "bg-orange-100 text-orange-800 border border-orange-300";
+      : court.rotationMode === "WINNER_VS_WINNER"
+      ? "bg-orange-100 text-orange-800 border border-orange-300"
+      : court.rotationMode === "SOCIAL"
+      ? "bg-blue-100 text-blue-800 border border-blue-300"
+      : "bg-emerald-100 text-emerald-800 border border-emerald-300";
 
   return (
     <div

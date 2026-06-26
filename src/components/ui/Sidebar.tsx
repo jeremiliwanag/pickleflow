@@ -78,13 +78,13 @@ export default function Sidebar({
       {/* Player Picker Modal */}
       {showPicker && (
         <PlayerPicker
-          existingPlayerIds={session.players.map((p) => p.id)}
-          onAddPlayers={(players: Player[]) => {
+          existingPlayerIds={session.players.map((p) => p.name)}
+onAddPlayers={(players: Player[]) => {
             for (const player of players) {
               onAddPlayer(
                 player.name,
-                player.ratings.self.tier,
-                player.ratings.self.division
+                player.ratings.organizer?.tier ?? player.ratings.self.tier,
+                player.ratings.organizer?.division ?? player.ratings.self.division
               );
             }
             setShowPicker(false);

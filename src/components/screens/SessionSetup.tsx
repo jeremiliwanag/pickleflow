@@ -17,7 +17,7 @@ export default function SessionSetup({ onStart }: SessionSetupProps) {
     createSession(name, courtCount);
   };
 
-  const handleStart = () => {
+const handleStart = () => {
     startSession();
     onStart();
   };
@@ -62,11 +62,11 @@ export default function SessionSetup({ onStart }: SessionSetupProps) {
         </div>
       </Card>
 
-      {!session && (
+{!session && (
         <Button label="Create Session" onClick={handleCreate} fullWidth />
       )}
 
-      {session && session.state === "SETUP" && (
+      {session && session.state === "SETUP" && courtCount > 0 && (
         <>
           <Card className="mb-4">
             <p className="text-sm font-medium text-gray-700 mb-3">
@@ -113,7 +113,7 @@ export default function SessionSetup({ onStart }: SessionSetupProps) {
             ))}
           </Card>
 
-          <Button label="Start Session" onClick={handleStart} fullWidth />
+          <Button label="Next -- Add Players" onClick={handleStart} fullWidth />
         </>
       )}
     </div>

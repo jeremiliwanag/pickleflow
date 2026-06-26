@@ -5,7 +5,7 @@
 
 import { create } from "zustand";
 import { generateNextRound, recordMatchResult } from "../engine/scheduler";
-import { saveSession, updateSession } from "../db/sessionDB";
+import { saveSession, updateSession, getRecentSessions } from "../db/sessionDB";
 import type {
   Session,
   Player,
@@ -101,6 +101,7 @@ interface SessionStore {
 
   // Firebase sync
   syncSession: () => Promise<void>;
+  loadLatestSession: () => Promise<void>;
 }
 
 // ============================================
@@ -130,6 +131,36 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       set({ saving: false });
     }
   },
+
+loadLatestSession: async () => {
+    set({ saving: true });
+    try {
+      const sessions = await getRecentSessions(1);
+      if (sessions.length > 0) {
+        const latest = sessions[0];
+        if (latest.state === "ACTIVE" || latest.state === "PAUSED") {
+          // Migrate old WINNER_STAYS to FAIR_PLAY
+          const migratedCourts = latest.courts.map((c) => ({
+            ...c,
+            rotationMode:
+              c.rotationMode === ("WINNER_STAYS" as never)
+                ? ("FAIR_PLAY" as const)
+                : c.rotationMode,
+            backToBackPolicy:
+              c.rotationMode === ("WINNER_STAYS" as never)
+                ? ("STRICT" as const)
+                : c.backToBackPolicy,
+          }));
+          set({ session: { ...latest, courts: migratedCourts } });
+        }
+      }
+    } catch (error) {
+      set({ error: "Failed to load session" });
+    } finally {
+      set({ saving: false });
+    }
+  },
+  
 
   // ============================================
   // SESSION LIFECYCLE
@@ -172,7 +203,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     await updateSession(session.id, { state: "ACTIVE" });
   },
 
-  endSession: async () => {
+endSession: async () => {
     const { session } = get();
     if (!session) return;
     const updated = {
@@ -180,11 +211,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       state: "ENDED" as const,
       endedAt: Date.now(),
     };
-    set({ session: updated });
     await updateSession(session.id, {
       state: "ENDED",
       endedAt: updated.endedAt,
     });
+    set({ session: null, lastOutput: null });
   },
 
   // Add player during active session

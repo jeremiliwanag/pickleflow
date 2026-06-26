@@ -294,7 +294,7 @@ export default function PlayerPicker({
                   placeholder="Player name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-base text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                 />
               </div>
 
