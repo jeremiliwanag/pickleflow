@@ -184,11 +184,10 @@ export default function CourtCard({
   const renderTeam = (
     label: string,
     ids: string[],
-    showReplace: boolean,
-    compact = false
+    showReplace: boolean
   ) => (
     <div className="flex-1 flex flex-col gap-2">
-      <p className={`font-black text-gray-500 uppercase tracking-wider text-center ${compact ? "text-[10px]" : "text-xs"}`}>
+      <p className="text-xs font-black text-gray-500 uppercase tracking-wider text-center">
         {label}
       </p>
       {ids.map((id) => {
@@ -197,7 +196,6 @@ export default function CourtCard({
           <PlayerCard
             key={id}
             player={p}
-            compact={compact}
             onClick={onPlayerClick ? () => onPlayerClick(p) : undefined}
             onReplace={showReplace ? () => setReplacingId(id) : undefined}
           />
@@ -317,13 +315,13 @@ export default function CourtCard({
             )}
 
             <div className="flex items-stretch gap-3 mb-3">
-              {renderTeam("Team A", pa.teamA.playerIds, true, hasActiveMatch)}
+              {renderTeam("Team A", pa.teamA.playerIds, true)}
               <div className="flex items-center justify-center px-2">
-                <div className={`rounded-full bg-blue-600 flex items-center justify-center shadow ${hasActiveMatch ? "w-7 h-7" : "w-10 h-10"}`}>
-                  <span className={`font-black text-white ${hasActiveMatch ? "text-[9px]" : "text-xs"}`}>VS</span>
+                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow">
+                  <span className="font-black text-white text-xs">VS</span>
                 </div>
               </div>
-              {renderTeam("Team B", pa.teamB.playerIds, true, hasActiveMatch)}
+              {renderTeam("Team B", pa.teamB.playerIds, true)}
             </div>
 
             {!hasActiveMatch && (
