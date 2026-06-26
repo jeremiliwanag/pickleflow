@@ -18,8 +18,9 @@ const {
     setPlayerStatus,
     addPlayerToActiveSession,
     removePlayer,
-    updateCourt,
   } = useSessionStore();
+
+  const { updateCourt } = useSessionStore();
 
 const [_replacing, setReplacing] = useState<string | null>(null);
 
