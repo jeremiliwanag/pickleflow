@@ -77,6 +77,7 @@ export default function PlayerPicker({
   const [tab, setTab] = useState<"roster" | "new">("roster");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [tierFilter, setTierFilter] = useState<SkillTier | "ALL">("ALL");
 
   // New player form
   const [name, setName] = useState("");
@@ -90,6 +91,27 @@ export default function PlayerPicker({
   const availableRoster = roster.filter(
     (p) => !existingPlayerIds.includes(p.name)
   );
+
+  const filteredRoster = tierFilter === "ALL"
+    ? availableRoster
+    : availableRoster.filter(
+        (p) => getActiveRating(p.ratings).tier === tierFilter
+      );
+
+  const allFilteredSelected = filteredRoster.length > 0 &&
+    filteredRoster.every((p) => selected.has(p.id));
+
+  const toggleSelectAll = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        filteredRoster.forEach((p) => next.delete(p.id));
+      } else {
+        filteredRoster.forEach((p) => next.add(p.id));
+      }
+      return next;
+    });
+  };
 
   const toggleSelect = (playerId: string) => {
     setSelected((prev) => {
@@ -202,6 +224,42 @@ export default function PlayerPicker({
         <div className="flex-1 overflow-y-auto p-5">
           {tab === "roster" && (
             <>
+              {/* Filter bar */}
+              {!loading && availableRoster.length > 0 && (
+                <div className="flex items-center gap-2 mb-4 flex-wrap">
+                  <button
+                    onClick={toggleSelectAll}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black border-2 transition-colors ${
+                      allFilteredSelected
+                        ? "border-emerald-600 bg-emerald-600 text-white"
+                        : "border-gray-300 text-gray-600 hover:border-emerald-400"
+                    }`}
+                  >
+                    {allFilteredSelected ? "✓ All Selected" : "Select All"}
+                  </button>
+                  <div className="w-px h-5 bg-gray-200" />
+                  {(["ALL", ...TIERS] as const).map((t) => {
+                    const count = t === "ALL"
+                      ? availableRoster.length
+                      : availableRoster.filter((p) => getActiveRating(p.ratings).tier === t).length;
+                    if (t !== "ALL" && count === 0) return null;
+                    return (
+                      <button
+                        key={t}
+                        onClick={() => setTierFilter(t)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-colors ${
+                          tierFilter === t
+                            ? "border-emerald-600 bg-emerald-50 text-emerald-700"
+                            : "border-gray-200 text-gray-500 hover:border-gray-300"
+                        }`}
+                      >
+                        {t === "ALL" ? `All (${count})` : `${TIER_LABELS[t]} (${count})`}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {loading ? (
                 <div className="flex items-center justify-center h-32">
                   <p className="text-gray-400">Loading roster...</p>
@@ -218,12 +276,17 @@ export default function PlayerPicker({
                     Add your first player
                   </button>
                 </div>
+              ) : filteredRoster.length === 0 ? (
+                <div className="flex items-center justify-center h-32">
+                  <p className="text-gray-400">No {TIER_LABELS[tierFilter as SkillTier]} players in roster</p>
+                </div>
               ) : (
                 <div className="grid grid-cols-3 gap-3">
-                  {availableRoster.map((player) => {
+                  {filteredRoster.map((player) => {
                     const isSelected = selected.has(player.id);
                     const rating = getActiveRating(player.ratings);
                     return (
+
                       <div key={player.id} className="relative group">
                         <button
                           onClick={() => toggleSelect(player.id)}
