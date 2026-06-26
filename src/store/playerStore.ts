@@ -5,7 +5,7 @@
 
 import { create } from "zustand";
 import { getAllPlayers, savePlayer, updatePlayer, deletePlayer } from "../db/playerDB";
-import type { Player, SkillTier } from "../types";
+import type { Player, SkillTier, CommunityRating } from "../types";
 
 function generateId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -35,13 +35,23 @@ interface PlayerStore {
   // Remove player from roster
   removeFromRoster: (playerId: string) => Promise<void>;
 
-  // Update rating
+  // Update self rating
   updateRating: (
     playerId: string,
-    type: "self" | "organizer",
+    type: "self",
     tier: SkillTier,
     division: number
   ) => Promise<void>;
+
+  // Add anonymous community rating (max 5)
+  addCommunityRating: (
+    playerId: string,
+    tier: SkillTier,
+    division: number
+  ) => Promise<void>;
+
+  // Update player photo URL
+  updatePlayerPhoto: (playerId: string, photoURL: string) => Promise<void>;
 }
 
 export const usePlayerStore = create<PlayerStore>((set, get) => ({
@@ -65,7 +75,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       name,
       ratings: {
         self: { tier, division },
-        organizer: null,
+        community: [],
         system: null,
       },
       attendanceStatus: "PRESENT",
@@ -125,4 +135,30 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
 
     await get().updateRosterPlayer(playerId, { ratings: updatedRatings });
   },
+
+  addCommunityRating: async (playerId, tier, division) => {
+    const { roster } = get();
+    const player = roster.find((p) => p.id === playerId);
+    if (!player) return;
+    const existingCommunity = player.ratings.community ?? [];
+    if (existingCommunity.length >= 5) return;
+
+    const newRating: CommunityRating = {
+      id: `cr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      rating: { tier, division },
+      createdAt: Date.now(),
+    };
+
+    const updatedRatings = {
+      ...player.ratings,
+      community: [...existingCommunity, newRating],
+    };
+
+    await get().updateRosterPlayer(playerId, { ratings: updatedRatings });
+  },
+
+  updatePlayerPhoto: async (playerId, photoURL) => {
+    await get().updateRosterPlayer(playerId, { photoURL });
+  },
+
 }));

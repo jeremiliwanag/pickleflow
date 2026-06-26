@@ -40,10 +40,40 @@ export interface SkillRating {
   division: number; // 1.0 to 5.9 with decimals
 }
 
+export interface CommunityRating {
+  id: string;
+  rating: SkillRating;
+  createdAt: number;
+}
+
 export interface PlayerRatings {
   self: SkillRating;
-  organizer: SkillRating | null;
+  community?: CommunityRating[]; // max 5
   system: SkillRating | null;
+  /** @deprecated legacy field — use community ratings instead */
+  organizer?: SkillRating | null;
+}
+
+export function getActiveRating(ratings: PlayerRatings): SkillRating {
+  if ((ratings.community?.length ?? 0) > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const community = ratings.community!;
+    const avgDivision =
+      community.reduce((sum, r) => sum + r.rating.division, 0) /
+      community.length;
+    const tiers = community.map((r) => r.rating.tier);
+    const tier = tiers.sort(
+      (a, b) =>
+        tiers.filter((t) => t === b).length -
+        tiers.filter((t) => t === a).length
+    )[0];
+    return { tier, division: parseFloat(avgDivision.toFixed(1)) };
+  }
+  // Legacy organizer field — used when no community ratings exist
+  if (ratings.organizer) {
+    return ratings.organizer;
+  }
+  return ratings.self;
 }
 
 // Display: "Novice 2.7"
@@ -81,6 +111,7 @@ export interface Player {
   payment: Payment;
   leavingSoon: LeavingSoon;
   notes: string;
+  photoURL?: string;
   // Stats for this session
   gamesPlayed: number;
   gamesWon: number;

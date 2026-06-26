@@ -5,7 +5,7 @@
 // ============================================
 
 import type { Player, Session, SkillMatchingSetting } from "../types";
-import { skillRatingToNumber } from "../types";
+import { skillRatingToNumber, getActiveRating as getActiveSkillRating } from "../types";
 
 // Weight constants -- adjust these to tune fairness
 const WEIGHTS = {
@@ -18,13 +18,11 @@ const WEIGHTS = {
 
 // ============================================
 // ACTIVE RATING
-// Uses organizer rating if available
-// Falls back to self rating
+// Uses community rating if available, else self rating
 // ============================================
 
 export function getActiveRating(player: Player): number {
-  const rating = player.ratings.organizer ?? player.ratings.self;
-  return skillRatingToNumber(rating);
+  return skillRatingToNumber(getActiveSkillRating(player.ratings));
 }
 
 // ============================================

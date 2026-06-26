@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { useSessionStore } from "../../store/sessionStore";
+import { usePlayerStore } from "../../store/playerStore";
 import Sidebar from "../ui/Sidebar";
 import CourtCard from "../ui/CourtCard";
+import PlayerProfile from "../ui/PlayerProfile";
 import Button from "../ui/Button";
-import type { Match, SkillTier, RotationMode } from "../../types";
+import { uploadPlayerPhoto } from "../../db/storageDB";
+import type { Match, SkillTier, RotationMode, Player } from "../../types";
 
 export default function MainDashboard() {
   const session = useSessionStore((s) => s.session);
@@ -19,7 +22,11 @@ export default function MainDashboard() {
   const removePlayer = useSessionStore((s) => s.removePlayer);
   const updateCourt = useSessionStore((s) => s.updateCourt);
 
+  const addCommunityRating = usePlayerStore((s) => s.addCommunityRating);
+  const updatePlayerPhoto = usePlayerStore((s) => s.updatePlayerPhoto);
+
   const [_replacing, setReplacing] = useState<string | null>(null);
+  const [profilePlayer, setProfilePlayer] = useState<Player | null>(null);
 
   if (!session) return null;
 
@@ -51,7 +58,7 @@ export default function MainDashboard() {
       name,
       ratings: {
         self: { tier, division },
-        organizer: null,
+        community: [],
         system: null,
       },
       attendanceStatus: "PRESENT",
@@ -86,6 +93,20 @@ export default function MainDashboard() {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
+      {profilePlayer && (
+        <PlayerProfile
+          player={profilePlayer}
+          onClose={() => setProfilePlayer(null)}
+          onRatePlayer={(tier, division) => {
+            void addCommunityRating(profilePlayer.id, tier, division);
+          }}
+          onPhotoUpload={async (file) => {
+            const url = await uploadPlayerPhoto(profilePlayer.id, file);
+            await updatePlayerPhoto(profilePlayer.id, url);
+          }}
+        />
+      )}
+
       <Sidebar
         session={session}
         onPause={pauseSession}
@@ -94,6 +115,8 @@ export default function MainDashboard() {
         onPlayerStatusChange={handlePlayerStatusChange}
         onAddPlayer={handleAddPlayer}
         onDeletePlayer={handleDeletePlayer}
+        onAddCommunityRating={addCommunityRating}
+        onUpdatePlayerPhoto={updatePlayerPhoto}
       />
 
       <div className="flex-1 p-6 overflow-y-auto h-screen">
@@ -123,6 +146,7 @@ export default function MainDashboard() {
               onRecordWinner={handleRecordWinner}
               onReplacePlayer={handleReplacePlayer}
               onModeChange={(mode) => handleModeChange(court.id, mode)}
+              onPlayerClick={setProfilePlayer}
             />
           ))}
 
@@ -147,6 +171,7 @@ export default function MainDashboard() {
                       teamA={assignment.teamA.playerIds}
                       teamB={assignment.teamB.playerIds}
                       onReplacePlayer={handleReplacePlayer}
+                      onPlayerClick={setProfilePlayer}
                     />
                   );
                 })}

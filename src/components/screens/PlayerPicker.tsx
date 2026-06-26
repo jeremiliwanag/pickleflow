@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { usePlayerStore } from "../../store/playerStore";
 import type { Player, SkillTier } from "../../types";
-import { formatSkillRating } from "../../types";
+import { formatSkillRating, getActiveRating } from "../../types";
 
 interface PlayerPickerProps {
   existingPlayerIds?: string[];
@@ -222,8 +222,7 @@ export default function PlayerPicker({
                 <div className="grid grid-cols-3 gap-3">
                   {availableRoster.map((player) => {
                     const isSelected = selected.has(player.id);
-                    const rating =
-                      player.ratings.organizer ?? player.ratings.self;
+                    const rating = getActiveRating(player.ratings);
                     return (
                       <div key={player.id} className="relative group">
                         <button

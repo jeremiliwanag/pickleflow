@@ -5,7 +5,7 @@ import Button from "../ui/Button";
 import Card from "../ui/Card";
 import Badge from "../ui/Badge";
 import PlayerPicker from "./PlayerPicker";
-import { formatSkillRating } from "../../types";
+import { formatSkillRating, getActiveRating } from "../../types";
 import type { Player, SkillTier } from "../../types";
 
 interface PlayerRosterProps {
@@ -51,7 +51,7 @@ const handleAddPlayers = (players: Player[]) => {
       name,
       ratings: {
         self: { tier, division },
-        organizer: null,
+        community: [],
         system: null,
       },
       attendanceStatus: "PRESENT",
@@ -122,8 +122,7 @@ const handleAddPlayers = (players: Player[]) => {
 
       <div className="mb-4 space-y-2">
         {session.players.map((player) => {
-          const rating =
-            player.ratings.organizer ?? player.ratings.self;
+          const rating = getActiveRating(player.ratings);
           return (
             <Card key={player.id}>
               <div className="flex items-center justify-between">

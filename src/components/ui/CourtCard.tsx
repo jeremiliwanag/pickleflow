@@ -7,16 +7,7 @@ interface CourtCardProps {
   onRecordWinner: (match: Match, result: "TEAM_A" | "TEAM_B") => void;
   onReplacePlayer?: (playerId: string) => void;
   onModeChange?: (mode: "FAIR_PLAY" | "WINNER_VS_WINNER" | "SOCIAL") => void;
-  isNextUp?: boolean;
-  teamA?: string[];
-  teamB?: string[];
-}
-
-interface CourtCardProps {
-  court: Court;
-  players: Player[];
-  onRecordWinner: (match: Match, result: "TEAM_A" | "TEAM_B") => void;
-  onReplacePlayer?: (playerId: string) => void;
+  onPlayerClick?: (player: Player) => void;
   isNextUp?: boolean;
   teamA?: string[];
   teamB?: string[];
@@ -28,6 +19,7 @@ export default function CourtCard({
   onRecordWinner,
   onReplacePlayer,
   onModeChange,
+  onPlayerClick,
   isNextUp = false,
   teamA = [],
   teamB = [],
@@ -137,6 +129,7 @@ const modeBadge =
                 <PlayerCard
                   key={id}
                   player={player}
+                  onClick={onPlayerClick ? () => onPlayerClick(player) : undefined}
                   onReplace={
                     onReplacePlayer
                       ? () => onReplacePlayer(id)
@@ -163,6 +156,7 @@ const modeBadge =
                 <PlayerCard
                   key={id}
                   player={player}
+                  onClick={onPlayerClick ? () => onPlayerClick(player) : undefined}
                   onReplace={
                     onReplacePlayer
                       ? () => onReplacePlayer(id)

@@ -1,5 +1,5 @@
 import type { Player } from "../../types";
-import { formatSkillRating } from "../../types";
+import { formatSkillRating, getActiveRating } from "../../types";
 
 interface PlayerCardProps {
   player: Player;
@@ -7,6 +7,7 @@ interface PlayerCardProps {
   onStatusChange?: (status: Player["attendanceStatus"]) => void;
   compact?: boolean;
   onReplace?: () => void;
+  onClick?: () => void;
 }
 
 const AVATAR_COLORS = [
@@ -52,8 +53,9 @@ export default function PlayerCard({
   onStatusChange,
   compact = false,
   onReplace,
+  onClick,
 }: PlayerCardProps) {
-  const rating = player.ratings.organizer ?? player.ratings.self;
+  const rating = getActiveRating(player.ratings);
   const tierColor =
     TIER_BADGE_COLORS[rating.tier] ?? "bg-gray-200 text-gray-800";
   const winRate =
@@ -63,14 +65,25 @@ export default function PlayerCard({
 
   if (compact) {
     return (
-      <div className="flex items-center gap-3 p-3 bg-white/10 rounded-xl border border-white/10 hover:bg-white/20 transition-colors">
-        <div
-          className={`${getAvatarColor(
-            player.name
-          )} w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-md ring-2 ring-white/20`}
-        >
-          {getInitials(player.name)}
-        </div>
+      <div
+        className="flex items-center gap-3 p-3 bg-white/10 rounded-xl border border-white/10 hover:bg-white/20 transition-colors cursor-pointer"
+        onClick={onClick}
+      >
+        {player.photoURL ? (
+          <img
+            src={player.photoURL}
+            alt={player.name}
+            className="w-11 h-11 rounded-full object-cover flex-shrink-0 shadow-md ring-2 ring-white/20"
+          />
+        ) : (
+          <div
+            className={`${getAvatarColor(
+              player.name
+            )} w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-md ring-2 ring-white/20`}
+          >
+            {getInitials(player.name)}
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <p className="font-bold text-white text-sm leading-tight truncate">
             {player.name}
@@ -108,22 +121,33 @@ export default function PlayerCard({
   }
 
   return (
-    <div className="bg-white rounded-2xl border-2 border-gray-200 shadow-md hover:shadow-lg transition-shadow p-4 flex flex-col items-center gap-3 relative">
+    <div
+      className="bg-white rounded-2xl border-2 border-gray-200 shadow-md hover:shadow-lg transition-shadow p-4 flex flex-col items-center gap-3 relative cursor-pointer"
+      onClick={onClick}
+    >
       {onReplace && (
         <button
-          onClick={onReplace}
+          onClick={(e) => { e.stopPropagation(); onReplace(); }}
           className="absolute top-2 right-2 text-xs bg-orange-100 hover:bg-orange-200 text-orange-700 px-2 py-1 rounded-lg transition-colors font-semibold border border-orange-200"
         >
           Replace
         </button>
       )}
-      <div
-        className={`${getAvatarColor(
-          player.name
-        )} w-20 h-20 rounded-full flex items-center justify-center text-white font-black text-2xl shadow-lg ring-4 ring-gray-100`}
-      >
-        {getInitials(player.name)}
-      </div>
+      {player.photoURL ? (
+        <img
+          src={player.photoURL}
+          alt={player.name}
+          className="w-20 h-20 rounded-full object-cover shadow-lg ring-4 ring-gray-100"
+        />
+      ) : (
+        <div
+          className={`${getAvatarColor(
+            player.name
+          )} w-20 h-20 rounded-full flex items-center justify-center text-white font-black text-2xl shadow-lg ring-4 ring-gray-100`}
+        >
+          {getInitials(player.name)}
+        </div>
+      )}
       <div className="text-center">
         <p className="font-black text-gray-900 text-base leading-tight">
           {player.name}

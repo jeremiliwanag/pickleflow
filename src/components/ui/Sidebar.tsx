@@ -1,7 +1,10 @@
 import { useState } from "react";
 import type { Session, SkillTier, Player } from "../../types";
 import { getSessionFairnessScore } from "../../engine/fairness";
+import { getActiveRating } from "../../types";
+import { uploadPlayerPhoto } from "../../db/storageDB";
 import PlayerCard from "./PlayerCard";
+import PlayerProfile from "./PlayerProfile";
 import Button from "./Button";
 import PlayerPicker from "../screens/PlayerPicker";
 
@@ -20,6 +23,12 @@ interface SidebarProps {
     division: number
   ) => void;
   onDeletePlayer: (playerId: string) => void;
+  onAddCommunityRating?: (
+    playerId: string,
+    tier: SkillTier,
+    division: number
+  ) => Promise<void>;
+  onUpdatePlayerPhoto?: (playerId: string, photoURL: string) => Promise<void>;
 }
 
 export default function Sidebar({
@@ -30,10 +39,13 @@ export default function Sidebar({
   onPlayerStatusChange,
   onAddPlayer,
   onDeletePlayer,
+  onAddCommunityRating,
+  onUpdatePlayerPhoto,
 }: SidebarProps) {
   const fairness = getSessionFairnessScore(session);
   const [showPicker, setShowPicker] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [profilePlayer, setProfilePlayer] = useState<Player | null>(null);
 
   const paidCount = session.players.filter(
     (p) => p.payment.status === "PAID"
@@ -75,17 +87,33 @@ export default function Sidebar({
   return (
     <div className="w-96 h-screen sticky top-0 bg-green-900 text-white flex flex-col flex-shrink-0 overflow-hidden">
 
+      {/* Player Profile Panel */}
+      {profilePlayer && (
+        <PlayerProfile
+          player={profilePlayer}
+          onClose={() => setProfilePlayer(null)}
+          onRatePlayer={(tier, division) => {
+            if (onAddCommunityRating) {
+              void onAddCommunityRating(profilePlayer.id, tier, division);
+            }
+          }}
+          onPhotoUpload={async (file) => {
+            const url = await uploadPlayerPhoto(profilePlayer.id, file);
+            if (onUpdatePlayerPhoto) {
+              await onUpdatePlayerPhoto(profilePlayer.id, url);
+            }
+          }}
+        />
+      )}
+
       {/* Player Picker Modal */}
       {showPicker && (
         <PlayerPicker
           existingPlayerIds={session.players.map((p) => p.name)}
 onAddPlayers={(players: Player[]) => {
             for (const player of players) {
-              onAddPlayer(
-                player.name,
-                player.ratings.organizer?.tier ?? player.ratings.self.tier,
-                player.ratings.organizer?.division ?? player.ratings.self.division
-              );
+              const active = getActiveRating(player.ratings);
+              onAddPlayer(player.name, active.tier, active.division);
             }
             setShowPicker(false);
           }}
@@ -224,6 +252,7 @@ onAddPlayers={(players: Player[]) => {
                 player={player}
                 compact
                 showStatus
+                onClick={() => setProfilePlayer(player)}
                 onStatusChange={(status) =>
                   onPlayerStatusChange(
                     player.id,
@@ -257,6 +286,7 @@ onAddPlayers={(players: Player[]) => {
                   player={player}
                   compact
                   showStatus
+                  onClick={() => setProfilePlayer(player)}
                   onStatusChange={(status) =>
                     onPlayerStatusChange(
                       player.id,
