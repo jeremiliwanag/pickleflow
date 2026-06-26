@@ -75,7 +75,8 @@ export default function Sidebar({
   const activePlayers = session.players.filter(
     (p) => p.attendanceStatus !== "LEFT"
   );
-  const totalCourtCost = courtRate * courtHours;
+  const activeCourtsCount = session.courts.filter((c) => c.isActive).length;
+  const totalCourtCost = courtRate * courtHours * activeCourtsCount;
   const perPlayerCost =
     activePlayers.length > 0
       ? Math.ceil(totalCourtCost / activePlayers.length)
@@ -308,7 +309,9 @@ export default function Sidebar({
             </div>
             <div className="border-t border-green-700 pt-2 space-y-1">
               <div className="flex justify-between text-xs">
-                <span className="text-green-400">Total court cost</span>
+                <span className="text-green-400">
+                  Total court cost ({activeCourtsCount} court{activeCourtsCount !== 1 ? "s" : ""})
+                </span>
                 <span className="text-white font-bold">
                   ₱{totalCourtCost.toLocaleString()}
                 </span>

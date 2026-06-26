@@ -2,8 +2,10 @@ import { useState, useEffect } from "react";
 import { usePlayerStore } from "../../store/playerStore";
 import { useSessionStore } from "../../store/sessionStore";
 import { savePlayer } from "../../db/playerDB";
+import { uploadPlayerPhoto } from "../../db/storageDB";
 import type { SkillTier, Player } from "../../types";
 import { formatSkillRating, getActiveRating } from "../../types";
+import PlayerProfile from "./PlayerProfile";
 import PlayerStatsModal from "./PlayerStatsModal";
 
 const TIERS: SkillTier[] = ["BEGINNER", "NOVICE", "INTERMEDIATE", "ADVANCED", "ELITE"];
@@ -59,19 +61,15 @@ interface RosterManagerProps {
 }
 
 export default function RosterManager({ onClose }: RosterManagerProps) {
-  const { roster, loading, loadRoster, addToRoster, updateRosterPlayer, removeFromRoster } =
+  const { roster, loading, loadRoster, addToRoster, updateRosterPlayer, removeFromRoster, addCommunityRating, updatePlayerPhoto, updateRating } =
     usePlayerStore();
 
   const [search, setSearch] = useState("");
-  const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
+  const [profilePlayer, setProfilePlayer] = useState<Player | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [statsPlayer, setStatsPlayer] = useState<Player | null>(null);
 
-  // Edit form state
-  const [editName, setEditName] = useState("");
-  const [editTier, setEditTier] = useState<SkillTier>("BEGINNER");
-  const [editDivision, setEditDivision] = useState(1.0);
 
   // Add form state
   const [newName, setNewName] = useState("");
@@ -104,31 +102,16 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
     p.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const openEdit = (player: Player) => {
-    const rating = getActiveRating(player.ratings);
-    setEditName(player.name);
-    setEditTier(rating.tier);
-    setEditDivision(rating.division);
-    setEditingPlayer(player);
-    setShowAddForm(false);
-  };
-
-  const saveEdit = async () => {
-    if (!editingPlayer || !editName.trim()) return;
-    setSaving(true);
-    await updateRosterPlayer(editingPlayer.id, {
-      name: editName.trim(),
-      ratings: { ...editingPlayer.ratings, self: { tier: editTier, division: editDivision } },
-    });
-    setSaving(false);
-    setEditingPlayer(null);
-  };
+  // Live-derive profilePlayer from roster so it updates after edits
+  const liveProfilePlayer = profilePlayer
+    ? (roster.find((p) => p.id === profilePlayer.id) ?? null)
+    : null;
 
   const handleDelete = async () => {
     if (!deleteConfirmId) return;
     await removeFromRoster(deleteConfirmId);
     setDeleteConfirmId(null);
-    if (editingPlayer?.id === deleteConfirmId) setEditingPlayer(null);
+    if (profilePlayer?.id === deleteConfirmId) setProfilePlayer(null);
   };
 
   const handleAdd = async () => {
@@ -145,9 +128,30 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
 
-      {/* Sub-modals */}
+      {/* Player Stats Modal */}
       {statsPlayer && (
         <PlayerStatsModal player={statsPlayer} onClose={() => setStatsPlayer(null)} />
+      )}
+
+      {/* Player Profile panel (reused from sidebar) */}
+      {liveProfilePlayer && (
+        <PlayerProfile
+          player={liveProfilePlayer}
+          onClose={() => setProfilePlayer(null)}
+          onRatePlayer={async (tier, division) => {
+            await addCommunityRating(liveProfilePlayer.id, tier, division);
+          }}
+          onPhotoUpload={async (file) => {
+            const url = await uploadPlayerPhoto(liveProfilePlayer.id, file);
+            await updatePlayerPhoto(liveProfilePlayer.id, url);
+          }}
+          onUpdateSelfRating={async (tier, division) => {
+            await updateRating(liveProfilePlayer.id, "self", tier, division);
+          }}
+          onUpdateName={async (name) => {
+            await updateRosterPlayer(liveProfilePlayer.id, { name });
+          }}
+        />
       )}
 
       {deleteConfirmId && (
@@ -173,77 +177,43 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
         </div>
       )}
 
-      {/* Edit / Add slide-up modal */}
-      {(editingPlayer || showAddForm) && (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[55] p-4">
+      {/* Add New Player modal */}
+      {showAddForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[55] p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <h3 className="font-black text-gray-900 text-lg mb-4">
-              {editingPlayer ? `Edit — ${editingPlayer.name}` : "Add New Player"}
-            </h3>
+            <h3 className="font-black text-gray-900 text-lg mb-4">Add New Player</h3>
             <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="Player name"
-                value={editingPlayer ? editName : newName}
-                onChange={(e) =>
-                  editingPlayer ? setEditName(e.target.value) : setNewName(e.target.value)
-                }
-                autoFocus
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:border-emerald-500"
-              />
+              <input type="text" placeholder="Player name" value={newName}
+                onChange={(e) => setNewName(e.target.value)} autoFocus
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:border-emerald-500" />
               <div>
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Tier</p>
                 <div className="flex flex-wrap gap-2">
-                  {TIERS.map((t) => {
-                    const active = editingPlayer ? editTier === t : newTier === t;
-                    return (
-                      <button key={t}
-                        onClick={() => editingPlayer ? setEditTier(t) : setNewTier(t)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 transition-colors ${
-                          active
-                            ? "border-emerald-600 bg-emerald-600 text-white"
-                            : "border-gray-200 text-gray-600 hover:border-gray-300"
-                        }`}>
-                        {TIER_LABELS[t]}
-                      </button>
-                    );
-                  })}
+                  {TIERS.map((t) => (
+                    <button key={t} onClick={() => setNewTier(t)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 transition-colors ${
+                        newTier === t ? "border-emerald-600 bg-emerald-600 text-white" : "border-gray-200 text-gray-600 hover:border-gray-300"
+                      }`}>
+                      {TIER_LABELS[t]}
+                    </button>
+                  ))}
                 </div>
               </div>
               <div>
                 <div className="flex justify-between text-xs text-gray-500 mb-1">
                   <span>Division</span>
-                  <span className="font-bold text-emerald-600">
-                    {formatSkillRating({
-                      tier: editingPlayer ? editTier : newTier,
-                      division: editingPlayer ? editDivision : newDivision,
-                    })}
-                  </span>
+                  <span className="font-bold text-emerald-600">{formatSkillRating({ tier: newTier, division: newDivision })}</span>
                 </div>
-                <input type="range" min={1} max={5} step={0.1}
-                  value={editingPlayer ? editDivision : newDivision}
-                  onChange={(e) => {
-                    const v = parseFloat(e.target.value);
-                    editingPlayer ? setEditDivision(v) : setNewDivision(v);
-                  }}
-                  className="w-full accent-emerald-600"
-                />
+                <input type="range" min={1} max={5} step={0.1} value={newDivision}
+                  onChange={(e) => setNewDivision(parseFloat(e.target.value))}
+                  className="w-full accent-emerald-600" />
               </div>
               <div className="flex gap-2 pt-1">
-                <button
-                  onClick={editingPlayer ? saveEdit : handleAdd}
-                  disabled={saving || !(editingPlayer ? editName.trim() : newName.trim())}
+                <button onClick={handleAdd} disabled={saving || !newName.trim()}
                   className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm transition-colors disabled:opacity-50">
-                  {saving ? "Saving…" : editingPlayer ? "Save Changes" : "Add to Roster"}
+                  {saving ? "Saving…" : "Add to Roster"}
                 </button>
-                {editingPlayer && (
-                  <button onClick={() => setDeleteConfirmId(editingPlayer.id)}
-                    className="px-4 py-3 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-bold text-sm border-2 border-red-100 transition-colors">
-                    Delete
-                  </button>
-                )}
-                <button
-                  onClick={() => { setEditingPlayer(null); setShowAddForm(false); }}
+                <button onClick={() => setShowAddForm(false)}
                   className="px-4 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-sm transition-colors">
                   Cancel
                 </button>
@@ -286,7 +256,7 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
               </button>
             )}
             <button
-              onClick={() => { setShowAddForm(true); setEditingPlayer(null); }}
+              onClick={() => { setShowAddForm(true); setProfilePlayer(null); }}
               className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm transition-colors whitespace-nowrap"
             >
               + New Player
@@ -330,7 +300,7 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
                 return (
                   <div
                     key={player.id}
-                    onClick={() => openEdit(player)}
+                    onClick={() => setProfilePlayer(player)}
                     className={`bg-white rounded-2xl shadow-sm hover:shadow-md ${colors.glow} border border-gray-100 hover:border-emerald-200 cursor-pointer transition-all duration-200 overflow-hidden flex flex-col group`}
                   >
                     {/* Avatar area */}
@@ -402,7 +372,7 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
                         Stats
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); openEdit(player); }}
+                        onClick={(e) => { e.stopPropagation(); setProfilePlayer(player); }}
                         className="flex-1 py-2 text-xs font-bold text-blue-600 hover:bg-blue-50 transition-colors"
                       >
                         Edit
