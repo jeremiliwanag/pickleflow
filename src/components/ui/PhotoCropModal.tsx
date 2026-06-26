@@ -90,54 +90,82 @@ export default function PhotoCropModal({ file, onConfirm, onCancel }: PhotoCropM
     return () => canvas.removeEventListener("wheel", onWheel);
   }, []);
 
-  // ── Mouse drag ────────────────────────────────────────────────────────────
-  const onMouseDown = (e: React.MouseEvent) => {
-    dragging.current = true;
-    lastPos.current = { x: e.clientX, y: e.clientY };
-  };
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (!dragging.current) return;
-    setOffset((prev) => ({
-      x: prev.x + e.clientX - lastPos.current.x,
-      y: prev.y + e.clientY - lastPos.current.y,
-    }));
-    lastPos.current = { x: e.clientX, y: e.clientY };
-  };
-  const onMouseUp = () => { dragging.current = false; };
+  // ── Mouse drag (document-level so drag works outside canvas bounds) ────────
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-  // ── Touch drag + pinch zoom ───────────────────────────────────────────────
-  const onTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
+    const onMouseDown = (e: MouseEvent) => {
       dragging.current = true;
-      lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    } else if (e.touches.length === 2) {
-      dragging.current = false;
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      lastPinchDist.current = Math.sqrt(dx * dx + dy * dy);
-    }
-  };
-  const onTouchMove = (e: React.TouchEvent) => {
-    e.preventDefault();
-    if (e.touches.length === 1 && dragging.current) {
+      lastPos.current = { x: e.clientX, y: e.clientY };
+    };
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragging.current) return;
       setOffset((prev) => ({
-        x: prev.x + e.touches[0].clientX - lastPos.current.x,
-        y: prev.y + e.touches[0].clientY - lastPos.current.y,
+        x: prev.x + e.clientX - lastPos.current.x,
+        y: prev.y + e.clientY - lastPos.current.y,
       }));
-      lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    } else if (e.touches.length === 2 && lastPinchDist.current != null) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const factor = dist / lastPinchDist.current;
-      setScale((prev) => Math.min(10, Math.max(0.15, prev * factor)));
-      lastPinchDist.current = dist;
-    }
-  };
-  const onTouchEnd = () => {
-    dragging.current = false;
-    lastPinchDist.current = null;
-  };
+      lastPos.current = { x: e.clientX, y: e.clientY };
+    };
+    const onMouseUp = () => { dragging.current = false; };
+
+    canvas.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      canvas.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
+  // ── Touch drag + pinch zoom (non-passive so we can preventDefault) ────────
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        dragging.current = true;
+        lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      } else if (e.touches.length === 2) {
+        dragging.current = false;
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        lastPinchDist.current = Math.sqrt(dx * dx + dy * dy);
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      if (e.touches.length === 1 && dragging.current) {
+        setOffset((prev) => ({
+          x: prev.x + e.touches[0].clientX - lastPos.current.x,
+          y: prev.y + e.touches[0].clientY - lastPos.current.y,
+        }));
+        lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      } else if (e.touches.length === 2 && lastPinchDist.current != null) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const factor = dist / lastPinchDist.current;
+        setScale((prev) => Math.min(10, Math.max(0.15, prev * factor)));
+        lastPinchDist.current = dist;
+      }
+    };
+    const onTouchEnd = () => {
+      dragging.current = false;
+      lastPinchDist.current = null;
+    };
+
+    canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+    canvas.addEventListener("touchmove", onTouchMove, { passive: false });
+    canvas.addEventListener("touchend", onTouchEnd);
+    return () => {
+      canvas.removeEventListener("touchstart", onTouchStart);
+      canvas.removeEventListener("touchmove", onTouchMove);
+      canvas.removeEventListener("touchend", onTouchEnd);
+    };
+  }, []);
 
   // ── Zoom slider ───────────────────────────────────────────────────────────
   // Zoom toward/away from the circle center
@@ -201,13 +229,6 @@ export default function PhotoCropModal({ file, onConfirm, onCancel }: PhotoCropM
             width={CANVAS_SIZE}
             height={CANVAS_SIZE}
             className="w-full touch-none select-none cursor-grab active:cursor-grabbing block"
-            onMouseDown={onMouseDown}
-            onMouseMove={onMouseMove}
-            onMouseUp={onMouseUp}
-            onMouseLeave={onMouseUp}
-            onTouchStart={onTouchStart}
-            onTouchMove={onTouchMove}
-            onTouchEnd={onTouchEnd}
           />
           {!img && (
             <div className="absolute inset-0 flex items-center justify-center">
