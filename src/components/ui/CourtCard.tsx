@@ -11,12 +11,17 @@ interface CourtCardProps {
   court: Court;
   players: Player[];
   rules?: SessionRules;
-  onGenerate: () => void;
+  /** Claim the global next match for this court (empty state). */
+  onClaimNextMatch: () => void;
+  /** Whether a global next match is currently queued. */
+  hasNextMatch: boolean;
   onStartMatch: () => void;
   onReplacePlayer: (outId: string, inId: string) => void;
   onRecordWinner: (match: Match, result: "TEAM_A" | "TEAM_B") => void;
   onPlayerClick?: (player: Player) => void;
   onModeChange?: (mode: RotationMode) => void;
+  /** Legacy – still accepted so existing call sites don't break. */
+  onGenerate?: () => void;
 }
 
 // ── Replace player overlay ────────────────────────────────────────────────────
@@ -123,7 +128,8 @@ export default function CourtCard({
   court,
   players,
   rules,
-  onGenerate,
+  onClaimNextMatch,
+  hasNextMatch,
   onStartMatch,
   onReplacePlayer,
   onRecordWinner,
@@ -133,8 +139,7 @@ export default function CourtCard({
   const [replacingId, setReplacingId] = useState<string | null>(null);
 
   const match = court.currentMatch;
-  const pa = court.pendingAssignment ?? null;
-  // Ready = promoted match waiting for organizer to press Start (no timer yet)
+  // Ready = match waiting for organizer to press Start (no timer yet)
   const isReady = !!(match && match.result === "PENDING" && match.startTime === null);
   // Playing = match is live with the timer running
   const isPlaying = !!(match && match.result === "PENDING" && match.startTime !== null);
@@ -142,12 +147,7 @@ export default function CourtCard({
 
   const getPlayer = (id: string) => players.find((p) => p.id === id);
 
-  // Players in the pending assignment — locked out of Replace picker
-  const pendingIds = new Set([
-    ...(pa?.teamA.playerIds ?? []),
-    ...(pa?.teamB.playerIds ?? []),
-  ]);
-  // Players in the active match — also locked out (they're on court)
+  // Players in the active match — locked out of Replace picker
   const playingIds = new Set([
     ...(match?.teamA.playerIds ?? []),
     ...(match?.teamB.playerIds ?? []),
@@ -156,31 +156,30 @@ export default function CourtCard({
   const waitingPlayers = players.filter(
     (p) =>
       (p.attendanceStatus === "WAITING" || p.attendanceStatus === "PRESENT") &&
-      !pendingIds.has(p.id) &&
       !playingIds.has(p.id)
   );
 
   const replacingPlayer = replacingId ? getPlayer(replacingId) : null;
 
   // ── Header state ────────────────────────────────────────────────────────────
-  const isEmpty = !hasActiveMatch && !pa;
+  const isEmpty = !hasActiveMatch;
 
   const headerBg = isPlaying
     ? "bg-emerald-50 border-emerald-200"
-    : isReady || pa
+    : isReady
     ? "bg-blue-50 border-blue-200"
     : "bg-gray-50 border-gray-200";
 
   const cardBorder = isPlaying
     ? "border-emerald-300"
-    : isReady || pa
+    : isReady
     ? "border-blue-300 border-dashed"
     : "border-gray-200";
 
-  const statusLabel = isPlaying ? "In Progress" : isReady || pa ? "Ready" : "Empty";
+  const statusLabel = isPlaying ? "In Progress" : isReady ? "Ready" : "Empty";
   const statusCls = isPlaying
     ? "bg-emerald-100 text-emerald-800 border-emerald-200"
-    : isReady || pa
+    : isReady
     ? "bg-blue-100 text-blue-800 border-blue-200"
     : "bg-gray-100 text-gray-500 border-gray-200";
 
@@ -260,17 +259,24 @@ export default function CourtCard({
 
         {/* ── EMPTY ─────────────────────────────────────────────────────────── */}
         {isEmpty && (
-          <button
-            onClick={onGenerate}
-            className="w-full py-10 rounded-2xl border-2 border-dashed border-gray-200 hover:border-emerald-400 hover:bg-emerald-50 text-gray-400 hover:text-emerald-600 font-black text-sm transition-all flex flex-col items-center gap-2"
-          >
-            <span className="text-3xl">+</span>
-            Generate Match
-          </button>
+          hasNextMatch ? (
+            <button
+              onClick={onClaimNextMatch}
+              className="w-full py-10 rounded-2xl border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-black text-sm transition-all flex flex-col items-center gap-2"
+            >
+              <span className="text-3xl">▶</span>
+              Take Next Match
+            </button>
+          ) : (
+            <div className="w-full py-10 rounded-2xl border-2 border-dashed border-gray-200 text-gray-300 font-bold text-sm flex flex-col items-center gap-2">
+              <span className="text-3xl">⏳</span>
+              Waiting for next match…
+            </div>
+          )
         )}
 
         {/* ── READY current match ───────────────────────────────────────────
-            Promoted from Next Match. Organizer can still replace players.
+            Claimed from global Next Match. Organizer can replace players.
             Timer hasn't started. Win buttons are NOT shown yet.          */}
         {isReady && match && (
           <div>
@@ -283,23 +289,14 @@ export default function CourtCard({
               </div>
               {renderTeam("Team B", match.teamB.playerIds, true)}
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={onStartMatch}
-                className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm transition-colors shadow-sm"
-              >
-                ▶ Start Match
-              </button>
-              <button
-                onClick={onGenerate}
-                className="px-4 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-sm transition-colors"
-                title="Regenerate"
-              >
-                ↻
-              </button>
-            </div>
+            <button
+              onClick={onStartMatch}
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm transition-colors shadow-sm"
+            >
+              ▶ Start Match
+            </button>
             <p className="text-center text-xs text-gray-400 mt-2">
-              Tap a player to replace before starting
+              Tap a player card to replace before starting
             </p>
           </div>
         )}
@@ -339,69 +336,6 @@ export default function CourtCard({
           </div>
         )}
 
-        {/* ── NEXT MATCH panel ──────────────────────────────────────────────
-            Always secondary — shown below whichever current state is active.
-            Replace is always allowed here.                                */}
-        {pa && hasActiveMatch && (
-          <div className="border-t border-gray-100 pt-4">
-            <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-2">
-              Next Up
-            </p>
-            <div className="flex items-stretch gap-3 mb-2">
-              {renderTeam("Team A", pa.teamA.playerIds, true)}
-              <div className="flex items-center justify-center px-2">
-                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow">
-                  <span className="font-black text-white text-xs">VS</span>
-                </div>
-              </div>
-              {renderTeam("Team B", pa.teamB.playerIds, true)}
-            </div>
-          </div>
-        )}
-
-        {/* ── PENDING ONLY (first match, no current match yet) ─────────────
-            Classic flow: generated but not yet promoted.                  */}
-        {pa && !hasActiveMatch && (
-          <div>
-            <div className="flex items-stretch gap-3 mb-3">
-              {renderTeam("Team A", pa.teamA.playerIds, true)}
-              <div className="flex items-center justify-center px-2">
-                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-md">
-                  <span className="font-black text-white text-xs">VS</span>
-                </div>
-              </div>
-              {renderTeam("Team B", pa.teamB.playerIds, true)}
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={onStartMatch}
-                className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm transition-colors shadow-sm"
-              >
-                ▶ Start Match
-              </button>
-              <button
-                onClick={onGenerate}
-                className="px-4 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-sm transition-colors"
-                title="Regenerate"
-              >
-                ↻
-              </button>
-            </div>
-            <p className="text-center text-xs text-gray-400 mt-2">
-              Tap a player to replace before starting
-            </p>
-          </div>
-        )}
-
-        {/* ── Generate Next Match (while playing, no pending yet) ──────────── */}
-        {hasActiveMatch && !pa && (
-          <button
-            onClick={onGenerate}
-            className="w-full py-3 rounded-xl border-2 border-dashed border-blue-200 hover:border-blue-400 hover:bg-blue-50 text-blue-400 hover:text-blue-600 font-bold text-xs transition-all"
-          >
-            + Generate Next Match
-          </button>
-        )}
 
       </div>
     </div>

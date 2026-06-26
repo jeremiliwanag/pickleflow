@@ -7,6 +7,7 @@ import { create } from "zustand";
 import {
   generateNextRound,
   generateMatchForCourt as generateMatchForCourtEngine,
+  generateGlobalNextMatch,
   recordMatchResult,
 } from "../engine/scheduler";
 import { saveSession, updateSession, getRecentSessions } from "../db/sessionDB";
@@ -61,6 +62,7 @@ function createDefaultSession(name: string, courtCount: number): Session {
     createdAt: Date.now(),
     startedAt: null,
     endedAt: null,
+    nextMatch: null,
   };
 }
 
@@ -96,7 +98,11 @@ interface SessionStore {
   // Court management
   updateCourt: (courtId: string, updates: Partial<Court>) => void;
 
-  // Per-court scheduler
+  // Global scheduler
+  generateNextMatch: () => void;
+  claimNextMatch: (courtId: string) => void;
+  replacePlayerInNextMatch: (outId: string, inId: string) => void;
+  // Per-court (still used for Replace in ready current match)
   generateMatchForCourt: (courtId: string) => void;
   startMatch: (courtId: string) => void;
   replacePlayerInPending: (courtId: string, outId: string, inId: string) => void;
@@ -197,6 +203,8 @@ loadLatestSession: async () => {
       state: "ACTIVE",
       startedAt: updated.startedAt,
     });
+    // Seed the global queue with the first next match
+    get().generateNextMatch();
   },
 
   pauseSession: async () => {
@@ -339,6 +347,63 @@ addPlayer: (playerData) => {
   // ============================================
   // PER-COURT SCHEDULER
   // ============================================
+
+  generateNextMatch: () => {
+    const { session } = get();
+    if (!session || session.state !== "ACTIVE") return;
+
+    const nextMatch = generateGlobalNextMatch(session, Date.now());
+    if (!nextMatch) return;
+
+    const updated = { ...session, nextMatch };
+    set({ session: updated });
+    updateSession(session.id, { nextMatch });
+  },
+
+  claimNextMatch: (courtId) => {
+    const { session } = get();
+    if (!session) return;
+
+    const nm = session.nextMatch;
+    if (!nm) return;
+
+    const match: Match = {
+      id: generateId("match"),
+      courtId,
+      teamA: nm.teamA,
+      teamB: nm.teamB,
+      result: "PENDING",
+      startTime: null, // Ready — organizer presses Start Match when set
+      endTime: null,
+      round: session.currentRound + 1,
+    };
+
+    const updatedCourts = session.courts.map((c) =>
+      c.id === courtId ? { ...c, currentMatch: match } : c
+    );
+
+    const updated = { ...session, courts: updatedCourts, nextMatch: null };
+    set({ session: updated });
+    updateSession(session.id, { courts: updatedCourts, nextMatch: null });
+
+    // Immediately queue the next global match
+    get().generateNextMatch();
+  },
+
+  replacePlayerInNextMatch: (outId, inId) => {
+    const { session } = get();
+    if (!session?.nextMatch) return;
+
+    const swap = (ids: string[]) => ids.map((id) => (id === outId ? inId : id));
+    const updatedNextMatch = {
+      teamA: { playerIds: swap(session.nextMatch.teamA.playerIds) },
+      teamB: { playerIds: swap(session.nextMatch.teamB.playerIds) },
+    };
+
+    const updated = { ...session, nextMatch: updatedNextMatch };
+    set({ session: updated });
+    updateSession(session.id, { nextMatch: updatedNextMatch });
+  },
 
   generateMatchForCourt: (courtId) => {
     const { session } = get();
@@ -561,20 +626,16 @@ addPlayer: (playerData) => {
 
     const completedMatch: Match = { ...match, result, scoreA, scoreB, endTime: now };
 
-    // Find the pending next match (if any) to promote to Ready state
-    const thisCourt = session.courts.find((c) => c.currentMatch?.id === match.id);
-    const pa = thisCourt?.pendingAssignment ?? null;
-
-    // Promote pending → Ready current match (startTime: null = not yet started)
-    // Players stay PRESENT/WAITING — organizer can still replace before pressing Start Match
-    const promotedMatch: Match | null = pa
+    // Claim the global Next Match as this court's new Ready match
+    const nm = session.nextMatch ?? null;
+    const promotedMatch: Match | null = nm
       ? {
           id: generateId("match"),
           courtId: match.courtId,
-          teamA: pa.teamA,
-          teamB: pa.teamB,
+          teamA: nm.teamA,
+          teamB: nm.teamB,
           result: "PENDING",
-          startTime: null, // Ready state — timer hasn't started
+          startTime: null, // Ready state — organizer presses Start when ready
           endTime: null,
           round: session.currentRound + 1,
         }
@@ -582,11 +643,7 @@ addPlayer: (playerData) => {
 
     const updatedCourts = session.courts.map((court) => {
       if (court.currentMatch?.id !== match.id) return court;
-      return {
-        ...court,
-        currentMatch: promotedMatch,
-        pendingAssignment: null,
-      };
+      return { ...court, currentMatch: promotedMatch };
     });
 
     const updated: Session = {
@@ -594,6 +651,7 @@ addPlayer: (playerData) => {
       players: statsUpdatedPlayers,
       courts: updatedCourts,
       matchHistory: [...session.matchHistory, completedMatch],
+      nextMatch: null, // consumed — will regenerate below
     };
 
     set({ session: updated });
@@ -601,13 +659,11 @@ addPlayer: (playerData) => {
       players: statsUpdatedPlayers,
       courts: updatedCourts,
       matchHistory: updated.matchHistory,
+      nextMatch: null,
     });
 
-    // Auto-generate a new Next Match for this court
-    const courtAfter = updatedCourts.find((c) => c.id === match.courtId);
-    if (courtAfter && !courtAfter.pendingAssignment) {
-      get().generateMatchForCourt(match.courtId);
-    }
+    // Immediately queue the next global match
+    get().generateNextMatch();
   },
 
   // ============================================

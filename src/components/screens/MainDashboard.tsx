@@ -3,6 +3,7 @@ import { useSessionStore } from "../../store/sessionStore";
 import { usePlayerStore } from "../../store/playerStore";
 import Sidebar from "../ui/Sidebar";
 import CourtCard from "../ui/CourtCard";
+import NextMatchCard from "../ui/NextMatchCard";
 import PlayerProfile from "../ui/PlayerProfile";
 import SessionSummaryModal from "../ui/SessionSummaryModal";
 import { uploadPlayerPhoto } from "../../db/storageDB";
@@ -10,7 +11,9 @@ import type { Match, SkillTier, RotationMode, Player, Session } from "../../type
 
 export default function MainDashboard() {
   const session = useSessionStore((s) => s.session);
-  const generateMatchForCourt = useSessionStore((s) => s.generateMatchForCourt);
+  const generateNextMatch = useSessionStore((s) => s.generateNextMatch);
+  const claimNextMatch = useSessionStore((s) => s.claimNextMatch);
+  const replacePlayerInNextMatch = useSessionStore((s) => s.replacePlayerInNextMatch);
   const startMatch = useSessionStore((s) => s.startMatch);
   const replacePlayerInPending = useSessionStore((s) => s.replacePlayerInPending);
   const replacePlayerInCurrent = useSessionStore((s) => s.replacePlayerInCurrent);
@@ -174,10 +177,10 @@ export default function MainDashboard() {
               court={court}
               players={session.players}
               rules={session.rules}
-              onGenerate={() => generateMatchForCourt(court.id)}
+              hasNextMatch={!!session.nextMatch}
+              onClaimNextMatch={() => claimNextMatch(court.id)}
               onStartMatch={() => startMatch(court.id)}
               onReplacePlayer={(outId, inId) => {
-                // Route to the right action based on which section owns outId
                 const c = session.courts.find((c) => c.id === court.id);
                 const inReadyCurrent =
                   c?.currentMatch?.startTime === null &&
@@ -196,6 +199,17 @@ export default function MainDashboard() {
               onPlayerClick={(p) => setProfilePlayerId(p.id)}
             />
           ))}
+
+          {/* Global Next Match card — appears in the next grid slot */}
+          {session.nextMatch && (
+            <NextMatchCard
+              nextMatch={session.nextMatch}
+              players={session.players}
+              onReplace={(outId, inId) => replacePlayerInNextMatch(outId, inId)}
+              onRegenerate={() => generateNextMatch()}
+              onPlayerClick={(p) => setProfilePlayerId(p.id)}
+            />
+          )}
         </div>
       </div>
     </div>

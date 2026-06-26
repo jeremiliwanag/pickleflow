@@ -211,6 +211,8 @@ export interface Session {
   createdAt: number;
   startedAt: number | null;
   endedAt: number | null;
+  // One global queued match. Whichever court finishes first claims it.
+  nextMatch?: { teamA: Team; teamB: Team } | null;
 }
 
 // ============================================

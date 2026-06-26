@@ -510,11 +510,35 @@ function pairIntoTeams(
 }
 
 // ============================================
-// PER-COURT MATCH GENERATOR
-// Stage 1 selects the fairest four players.
-// Stage 2 pairs them based on this court's mode.
+// GLOBAL NEXT MATCH GENERATOR
+// One shared queue for the entire session.
+// Stage 1: pick the fairest 4 from the whole pool.
+// Stage 2: pair them (Fair Play default; re-paired
+//          with court mode when a court claims it).
 // ============================================
 
+export function generateGlobalNextMatch(
+  session: Session,
+  currentTime: number
+): { teamA: Team; teamB: Team } | null {
+  if (session.state !== "ACTIVE") return null;
+
+  // Exclude players in any active or ready match across all courts
+  const playingIds = getPlayingPlayerIds(session);
+
+  const eligible = getEligiblePlayers(session).filter(
+    (p) => !playingIds.has(p.id)
+  );
+
+  // Stage 1: who plays?
+  const four = selectFourPlayers(eligible, session, currentTime);
+  if (!four) return null;
+
+  // Stage 2: balanced pairing by default (court claims re-pair on assignment)
+  return pairForBalance(four);
+}
+
+// Kept for test backward compat — tests still call generateMatchForCourt
 export function generateMatchForCourt(
   court: Court,
   session: Session,
@@ -529,11 +553,9 @@ export function generateMatchForCourt(
     (p) => !playingIds.has(p.id) && !reservedIds.has(p.id)
   );
 
-  // Stage 1: who plays? (rotation mode plays no role here)
   const four = selectFourPlayers(eligible, session, currentTime);
   if (!four) return null;
 
-  // Stage 2: how are they paired?
   return pairIntoTeams(four, court, session);
 }
 
