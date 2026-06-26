@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { usePlayerStore } from "../../store/playerStore";
+import { useSessionStore } from "../../store/sessionStore";
+import { savePlayer } from "../../db/playerDB";
 import type { SkillTier, Player } from "../../types";
 import { formatSkillRating, getActiveRating } from "../../types";
 import PlayerStatsModal from "./PlayerStatsModal";
@@ -76,8 +78,27 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
   const [newTier, setNewTier] = useState<SkillTier>("BEGINNER");
   const [newDivision, setNewDivision] = useState(1.0);
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importCount, setImportCount] = useState<number | null>(null);
+
+  const session = useSessionStore((s) => s.session);
 
   useEffect(() => { loadRoster(); }, []);
+
+  // How many session players are missing from the roster?
+  const rosterNames = new Set(roster.map((p) => p.name.toLowerCase()));
+  const sessionOnlyPlayers = (session?.players ?? []).filter(
+    (p) => !rosterNames.has(p.name.toLowerCase())
+  );
+
+  const importSessionPlayers = async () => {
+    if (sessionOnlyPlayers.length === 0) return;
+    setImporting(true);
+    await Promise.all(sessionOnlyPlayers.map((p) => savePlayer(p)));
+    setImportCount(sessionOnlyPlayers.length);
+    setImporting(false);
+    // roster will auto-update via the real-time listener
+  };
 
   const filtered = roster.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
@@ -251,6 +272,19 @@ export default function RosterManager({ onClose }: RosterManagerProps) {
               onChange={(e) => setSearch(e.target.value)}
               className="w-56 border-2 border-gray-200 rounded-xl px-4 py-2 text-sm text-gray-900 bg-gray-50 focus:outline-none focus:border-emerald-500 focus:bg-white transition-colors"
             />
+            {sessionOnlyPlayers.length > 0 && (
+              <button
+                onClick={importSessionPlayers}
+                disabled={importing}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-sm transition-colors whitespace-nowrap disabled:opacity-60"
+              >
+                {importing
+                  ? "Importing…"
+                  : importCount !== null
+                  ? `✓ ${importCount} imported!`
+                  : `↓ Import ${sessionOnlyPlayers.length} from session`}
+              </button>
+            )}
             <button
               onClick={() => { setShowAddForm(true); setEditingPlayer(null); }}
               className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm transition-colors whitespace-nowrap"
