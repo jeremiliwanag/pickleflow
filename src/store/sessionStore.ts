@@ -212,13 +212,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   // PLAYER MANAGEMENT
   // ============================================
 
-  addPlayer: (playerData) => {
+addPlayer: (playerData) => {
     const { session } = get();
     if (!session) return;
 
+    // Prevent duplicate players
+    const alreadyIn = session.players.some(
+      (p) => p.id === (playerData as Player).id || p.name === playerData.name
+    );
+    if (alreadyIn) return;
+
     const newPlayer: Player = {
       ...playerData,
-      id: generateId("player"),
+      id: (playerData as Player).id ?? generateId("player"),
       joinedAt: Date.now(),
     };
 
@@ -365,7 +371,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return {
         ...court,
         currentMatch:
-          court.rotationMode === "WINNER_STAYS" ? completedMatch : null,
+          null,
       };
     });
 
@@ -415,7 +421,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           ...court,
           rotationMode: template.courtModes[i] ?? "FAIR_PLAY",
           backToBackPolicy:
-            template.courtModes[i] === "WINNER_STAYS" ? "ALLOWED" : "STRICT",
+            template.courtModes[i] === "FAIR_PLAY" ? "STRICT" : "ALLOWED",
         } as Court)
     );
 

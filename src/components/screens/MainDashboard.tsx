@@ -20,7 +20,7 @@ const {
     removePlayer,
     updateCourt,
   } = useSessionStore();
-  
+
 const [_replacing, setReplacing] = useState<string | null>(null);
 
   if (!session) return null;

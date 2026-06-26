@@ -220,7 +220,7 @@ function scheduleSocial(
   court: Court,
   availablePlayers: Player[],
   session: Session,
-  currentTime: number,
+  _currentTime: number,
   rng: () => number
 ): CourtAssignment | null {
   if (availablePlayers.length < 4) return null;
