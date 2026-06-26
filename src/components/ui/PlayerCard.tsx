@@ -98,11 +98,11 @@ export default function PlayerCard({
           <p className="text-green-300 text-xs mt-0.5 font-medium">
             {formatSkillRating(rating)}
           </p>
-          {winRate !== null && (
-            <p className="text-green-400 text-xs">
-              {player.gamesWon}W {player.gamesPlayed - player.gamesWon}L
-            </p>
-          )}
+          <p className="text-green-400 text-xs">
+            {player.gamesPlayed === 0
+              ? "0 games"
+              : `${player.gamesPlayed}G · ${player.gamesWon}W ${player.gamesPlayed - player.gamesWon}L`}
+          </p>
         </div>
         {showStatus && onStatusChange && (
           <div className="flex flex-col gap-1">

@@ -334,25 +334,25 @@ function getReservedIds(session: Session, excludeCourtId: string): Set<string> {
   return ids;
 }
 
-function selectTightestFour(candidates: Player[]): Player[] | null {
-  const n = candidates.length;
-  if (n < 4) return null;
-  if (n === 4) return candidates;
+// Given a locked-in anchor player, find the 3 companions from candidates
+// that produce the smallest skill spread across all 4.
+function selectBestCompanions(anchor: Player, candidates: Player[]): Player[] | null {
+  if (candidates.length < 3) return null;
+  if (candidates.length === 3) return candidates;
 
   let bestSpread = Infinity;
   let best: Player[] | null = null;
+  const n = candidates.length;
 
-  for (let i = 0; i < n - 3; i++) {
-    for (let j = i + 1; j < n - 2; j++) {
-      for (let k = j + 1; k < n - 1; k++) {
-        for (let l = k + 1; l < n; l++) {
-          const group = [candidates[i], candidates[j], candidates[k], candidates[l]];
-          const ratings = group.map(getActiveRating);
-          const spread = Math.max(...ratings) - Math.min(...ratings);
-          if (spread < bestSpread) {
-            bestSpread = spread;
-            best = group;
-          }
+  for (let i = 0; i < n - 2; i++) {
+    for (let j = i + 1; j < n - 1; j++) {
+      for (let k = j + 1; k < n; k++) {
+        const group = [anchor, candidates[i], candidates[j], candidates[k]];
+        const ratings = group.map(getActiveRating);
+        const spread = Math.max(...ratings) - Math.min(...ratings);
+        if (spread < bestSpread) {
+          bestSpread = spread;
+          best = [candidates[i], candidates[j], candidates[k]];
         }
       }
     }
@@ -391,7 +391,7 @@ function selectFourPlayers(
 
   if (pool.length < 4) return null;
 
-  // Rank by fairness (priority score handles ⭐, wait time, games played)
+  // Rank by fairness — who deserves court time most?
   const ranked = pool
     .map((p) => ({
       player: p,
@@ -399,11 +399,19 @@ function selectFourPlayers(
     }))
     .sort((a, b) => b.score - a.score);
 
-  // Take the top 8 most-deserving candidates
-  const candidates = ranked.slice(0, Math.min(8, ranked.length)).map((r) => r.player);
+  // FAIRNESS FIRST: the #1 ranked player is always locked in.
+  // They have the strongest claim to court time regardless of skill level.
+  // This prevents a solo advanced/beginner player from being perpetually skipped
+  // just because they widen the skill spread.
+  const mustPlay = ranked[0].player;
 
-  // Among the fairest candidates, pick 4 with tightest skill spread
-  return selectTightestFour(candidates);
+  // Among the next 7 most-deserving players, find the 3 that minimise spread
+  // when combined with the locked-in player.
+  const rest = ranked.slice(1, Math.min(8, ranked.length)).map((r) => r.player);
+  const companions = selectBestCompanions(mustPlay, rest);
+  if (!companions) return null;
+
+  return [mustPlay, ...companions];
 }
 
 // ============================================
