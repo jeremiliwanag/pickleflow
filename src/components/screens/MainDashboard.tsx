@@ -6,21 +6,18 @@ import Button from "../ui/Button";
 import type { Match, SkillTier } from "../../types";
 
 export default function MainDashboard() {
-const {
-    session,
-    generateRound,
-    recordResult,
-    applyAssignments,
-    lastOutput,
-    pauseSession,
-    resumeSession,
-    endSession,
-    setPlayerStatus,
-    addPlayerToActiveSession,
-    removePlayer,
-  } = useSessionStore();
-
-  const { updateCourt } = useSessionStore();
+const session = useSessionStore((s) => s.session);
+  const generateRound = useSessionStore((s) => s.generateRound);
+  const recordResult = useSessionStore((s) => s.recordResult);
+  const applyAssignments = useSessionStore((s) => s.applyAssignments);
+  const lastOutput = useSessionStore((s) => s.lastOutput);
+  const pauseSession = useSessionStore((s) => s.pauseSession);
+  const resumeSession = useSessionStore((s) => s.resumeSession);
+  const endSession = useSessionStore((s) => s.endSession);
+  const setPlayerStatus = useSessionStore((s) => s.setPlayerStatus);
+  const addPlayerToActiveSession = useSessionStore((s) => s.addPlayerToActiveSession);
+  const removePlayer = useSessionStore((s) => s.removePlayer);
+  const updateCourt = useSessionStore((s) => s.updateCourt);
 
 const [_replacing, setReplacing] = useState<string | null>(null);
 
