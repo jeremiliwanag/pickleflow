@@ -18,7 +18,7 @@ interface SidebarProps {
     playerId: string,
     status: "PRESENT" | "RESTING" | "LEFT"
   ) => void;
-  onCatchUp: (playerId: string) => void;
+  onSetPriority: (playerId: string, enabled: boolean) => void;
   onAddPlayer: (
     name: string,
     tier: SkillTier,
@@ -45,7 +45,7 @@ export default function Sidebar({
   onResume,
   onEnd,
   onPlayerStatusChange,
-  onCatchUp,
+  onSetPriority,
   onAddPlayer,
   onDeletePlayer,
   onAddCommunityRating,
@@ -375,44 +375,51 @@ export default function Sidebar({
         </div>
 
         <div className="flex-1 overflow-y-auto flex flex-col gap-2 pr-1 scrollbar-thin">
-          {waitingPlayers.map((player) => (
-            <div key={player.id} className="relative group">
-              <PlayerCard
-                player={player}
-                compact
-                showStatus
-                onClick={() => setProfilePlayerId(player.id)}
-                onStatusChange={(status) =>
-                  onPlayerStatusChange(
-                    player.id,
-                    status as "PRESENT" | "RESTING" | "LEFT"
-                  )
-                }
-              />
-              {/* Catch Up button — shown on hover for waiting players */}
-              <div className="absolute top-1 right-6 opacity-0 group-hover:opacity-100 transition-all flex gap-1">
-                {(player.catchUpGames ?? 0) === 0 ? (
-                  <button
-                    title="Give this player 2 priority games to catch up"
-                    onClick={() => onCatchUp(player.id)}
-                    className="text-xs bg-amber-400 hover:bg-amber-500 text-white px-2 h-5 rounded-full font-bold"
-                  >
-                    ⚡ Catch Up
-                  </button>
-                ) : (
-                  <span className="text-xs bg-amber-400 text-white px-2 h-5 rounded-full font-bold flex items-center">
-                    ⚡ {player.catchUpGames} left
-                  </span>
-                )}
+          {waitingPlayers.map((player) => {
+            const hasPriority = player.priority === true && (player.priorityGamesLeft ?? 0) > 0;
+            return (
+              <div key={player.id} className="relative group">
+                <PlayerCard
+                  player={player}
+                  compact
+                  showStatus
+                  onClick={() => setProfilePlayerId(player.id)}
+                  onStatusChange={(status) =>
+                    onPlayerStatusChange(
+                      player.id,
+                      status as "PRESENT" | "RESTING" | "LEFT"
+                    )
+                  }
+                />
+                {/* ⭐ Priority toggle — hover or active */}
+                <div className={`absolute top-1 right-6 flex gap-1 transition-all ${hasPriority ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                  {hasPriority ? (
+                    <button
+                      title={`Priority ON — ${player.priorityGamesLeft} game${player.priorityGamesLeft !== 1 ? "s" : ""} left. Click to disable.`}
+                      onClick={() => onSetPriority(player.id, false)}
+                      className="text-xs bg-amber-400 hover:bg-amber-500 text-white px-2 h-5 rounded-full font-bold flex items-center gap-0.5"
+                    >
+                      ⭐ {player.priorityGamesLeft}
+                    </button>
+                  ) : (
+                    <button
+                      title="Enable priority for 2 games (late arrival)"
+                      onClick={() => onSetPriority(player.id, true)}
+                      className="text-xs bg-gray-600 hover:bg-amber-400 text-white px-2 h-5 rounded-full font-bold"
+                    >
+                      ⭐
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => setConfirmDeleteId(player.id)}
+                  className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-xs bg-red-500 hover:bg-red-600 text-white w-5 h-5 rounded-full flex items-center justify-center transition-all"
+                >
+                  x
+                </button>
               </div>
-              <button
-                onClick={() => setConfirmDeleteId(player.id)}
-                className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-xs bg-red-500 hover:bg-red-600 text-white w-5 h-5 rounded-full flex items-center justify-center transition-all"
-              >
-                x
-              </button>
-            </div>
-          ))}
+            );
+          })}
           {waitingPlayers.length === 0 && (
             <p className="text-green-600 text-sm italic">
               All players are on court

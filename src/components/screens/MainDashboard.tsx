@@ -5,16 +5,16 @@ import Sidebar from "../ui/Sidebar";
 import CourtCard from "../ui/CourtCard";
 import PlayerProfile from "../ui/PlayerProfile";
 import SessionSummaryModal from "../ui/SessionSummaryModal";
-import Button from "../ui/Button";
 import { uploadPlayerPhoto } from "../../db/storageDB";
 import type { Match, SkillTier, RotationMode, Player, Session } from "../../types";
 
 export default function MainDashboard() {
   const session = useSessionStore((s) => s.session);
-  const generateRound = useSessionStore((s) => s.generateRound);
+  const generateMatchForCourt = useSessionStore((s) => s.generateMatchForCourt);
+  const startMatch = useSessionStore((s) => s.startMatch);
+  const replacePlayerInPending = useSessionStore((s) => s.replacePlayerInPending);
+  const setPriority = useSessionStore((s) => s.setPriority);
   const recordResult = useSessionStore((s) => s.recordResult);
-  const applyAssignments = useSessionStore((s) => s.applyAssignments);
-  const lastOutput = useSessionStore((s) => s.lastOutput);
   const pauseSession = useSessionStore((s) => s.pauseSession);
   const resumeSession = useSessionStore((s) => s.resumeSession);
   const endSession = useSessionStore((s) => s.endSession);
@@ -22,21 +22,18 @@ export default function MainDashboard() {
   const addPlayerToActiveSession = useSessionStore((s) => s.addPlayerToActiveSession);
   const removePlayer = useSessionStore((s) => s.removePlayer);
   const updateCourt = useSessionStore((s) => s.updateCourt);
+  const updateSessionPlayer = useSessionStore((s) => s.updatePlayer);
 
   const addCommunityRating = usePlayerStore((s) => s.addCommunityRating);
   const updatePlayerPhoto = usePlayerStore((s) => s.updatePlayerPhoto);
   const updateRating = usePlayerStore((s) => s.updateRating);
   const resetCommunityRatings = usePlayerStore((s) => s.resetCommunityRatings);
   const addToRoster = usePlayerStore((s) => s.addToRoster);
-  const updateSessionPlayer = useSessionStore((s) => s.updatePlayer);
 
-  const [_replacing, setReplacing] = useState<string | null>(null);
   const [profilePlayerId, setProfilePlayerId] = useState<string | null>(null);
-  // Capture session snapshot for summary before endSession clears it
   const [summarySession, setSummarySession] = useState<Session | null>(null);
 
   if (!session) {
-    // Show summary if available after session ended
     if (summarySession) {
       return (
         <SessionSummaryModal
@@ -53,19 +50,8 @@ export default function MainDashboard() {
       ? (session.players.find((p) => p.id === profilePlayerId) ?? null)
       : null;
 
-  const handleRecordWinner = (
-    match: Match,
-    result: "TEAM_A" | "TEAM_B",
-    scoreA?: number,
-    scoreB?: number
-  ) => {
-    void recordResult(match, result, scoreA, scoreB);
-  };
-
-  const handleGenerateRound = () => {
-    generateRound();
-    const { lastOutput: out } = useSessionStore.getState();
-    if (out) applyAssignments(out.assignments);
+  const handleRecordWinner = (match: Match, result: "TEAM_A" | "TEAM_B") => {
+    void recordResult(match, result);
   };
 
   const handlePlayerStatusChange = (
@@ -90,21 +76,13 @@ export default function MainDashboard() {
       partners: [],
       opponents: [],
     });
-    // Also save to permanent roster so they appear in the Roster Manager
     void addToRoster(name, tier, division);
   };
 
   const handleEnd = async () => {
-    // Snapshot before endSession clears it
-    setSummarySession({
-      ...session,
-      state: "ENDED",
-      endedAt: Date.now(),
-    });
+    setSummarySession({ ...session, state: "ENDED", endedAt: Date.now() });
     await endSession();
   };
-
-  const handleReplacePlayer = (playerId: string) => setReplacing(playerId);
 
   const handleModeChange = (courtId: string, mode: RotationMode) => {
     updateCourt(courtId, {
@@ -153,6 +131,7 @@ export default function MainDashboard() {
         onResume={resumeSession}
         onEnd={handleEnd}
         onPlayerStatusChange={handlePlayerStatusChange}
+        onSetPriority={setPriority}
         onAddPlayer={handleAddPlayer}
         onDeletePlayer={removePlayer}
         onAddCommunityRating={async (playerId, tier, division) => {
@@ -164,9 +143,6 @@ export default function MainDashboard() {
         onUpdatePlayerPhoto={async (playerId, photoURL) => {
           await updatePlayerPhoto(playerId, photoURL);
           updateSessionPlayer(playerId, { photoURL });
-        }}
-        onCatchUp={(playerId) => {
-          updateSessionPlayer(playerId, { catchUpGames: 2 });
         }}
         onUpdateSelfRating={async (playerId, tier, division) => {
           await updateRating(playerId, "self", tier, division);
@@ -183,18 +159,11 @@ export default function MainDashboard() {
       />
 
       <div className="flex-1 p-6 overflow-y-auto h-screen">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">{session.name}</h2>
-            <p className="text-gray-600 text-sm">
-              Round {session.currentRound} · {session.players.length} Players
-            </p>
-          </div>
-          <Button
-            label="Generate Next Round"
-            onClick={handleGenerateRound}
-            disabled={session.state !== "ACTIVE"}
-          />
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">{session.name}</h2>
+          <p className="text-gray-600 text-sm">
+            Round {session.currentRound} · {session.players.length} Players
+          </p>
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -204,41 +173,16 @@ export default function MainDashboard() {
               court={court}
               players={session.players}
               rules={session.rules}
+              onGenerate={() => generateMatchForCourt(court.id)}
+              onStartMatch={() => startMatch(court.id)}
+              onReplacePlayer={(outId, inId) =>
+                replacePlayerInPending(court.id, outId, inId)
+              }
               onRecordWinner={handleRecordWinner}
-              onReplacePlayer={handleReplacePlayer}
               onModeChange={(mode) => handleModeChange(court.id, mode)}
               onPlayerClick={(p) => setProfilePlayerId(p.id)}
             />
           ))}
-
-          {lastOutput && lastOutput.assignments.length > 0 && (
-            <div className="xl:col-span-2">
-              <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">
-                Next Round Preview
-              </p>
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                {lastOutput.assignments.map((assignment, i) => {
-                  const court = session.courts.find(
-                    (c) => c.id === assignment.courtId
-                  );
-                  if (!court) return null;
-                  return (
-                    <CourtCard
-                      key={i}
-                      court={court}
-                      players={session.players}
-                      onRecordWinner={handleRecordWinner}
-                      isNextUp
-                      teamA={assignment.teamA.playerIds}
-                      teamB={assignment.teamB.playerIds}
-                      onReplacePlayer={handleReplacePlayer}
-                      onPlayerClick={(p) => setProfilePlayerId(p.id)}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

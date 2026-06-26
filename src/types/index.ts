@@ -140,7 +140,11 @@ export interface Player {
   winStreak?: number;
   waitingSince: number | null; // timestamp in ms
   consecutiveGames: number;
-  catchUpGames?: number; // remaining priority-boost games for late joiners
+  // ⭐ Late-arrival priority — organizer-set; auto-turns off after 2 consecutive games
+  priority?: boolean;
+  priorityGamesLeft?: number;
+  /** @deprecated replaced by priority/priorityGamesLeft */
+  catchUpGames?: number;
   partners: string[]; // player IDs played with
   opponents: string[]; // player IDs played against
   joinedAt: number; // timestamp in ms
@@ -156,6 +160,8 @@ export interface Court {
   rotationMode: RotationMode;
   backToBackPolicy: BackToBackPolicy;
   currentMatch: Match | null;
+  // Generated but not yet started — organizer can replace players before starting
+  pendingAssignment?: { teamA: Team; teamB: Team } | null;
   isActive: boolean;
 }
 

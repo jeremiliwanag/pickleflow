@@ -41,7 +41,9 @@ function getEligiblePlayers(session: Session): Player[] {
 function getPlayingPlayerIds(session: Session): Set<string> {
   const ids = new Set<string>();
   for (const court of session.courts) {
-    if (court.currentMatch) {
+    // Only exclude players whose match is still in progress (PENDING).
+    // Completed matches must not block players from the next round.
+    if (court.currentMatch && court.currentMatch.result === "PENDING") {
       court.currentMatch.teamA.playerIds.forEach((id) => ids.add(id));
       court.currentMatch.teamB.playerIds.forEach((id) => ids.add(id));
     }
@@ -70,32 +72,40 @@ function scoreCombo(
   session: Session,
   mode: ScoringMode
 ): number {
+  const all4 = [...teamA, ...teamB];
+  const ratings = all4.map(getActiveRating);
+  const spread = Math.max(...ratings) - Math.min(...ratings);
+
+  // Skill spread: prefer groups of 4 with the smallest rating range.
+  // Normalized over 12 points (≈ two full tiers). Spread of 0 → 1.0, spread of 12+ → 0.
+  // This is the PRIMARY criterion — it ensures we don't mix Beginners with Advanced players
+  // unless truly no better combination exists.
+  const spreadScore = Math.max(0, 1 - spread / 12);
+
+  // Team balance: how equal are the two team averages within the chosen 4?
   const balance = getTeamBalanceScore(teamA, teamB);
 
   const partnerA = getPartnerDiversityScore(teamA[0], teamA[1]);
   const partnerB = getPartnerDiversityScore(teamB[0], teamB[1]);
   const partner = (partnerA + partnerB) / 2;
-
   const opponent = getOpponentDiversityScore(teamA, teamB);
 
   let score: number;
   if (mode === "SOCIAL") {
-    score = balance * 0.30 + partner * 0.45 + opponent * 0.25;
+    // Social: variety over skill proximity
+    score = spreadScore * 0.10 + balance * 0.25 + partner * 0.45 + opponent * 0.20;
   } else {
-    // FAIR_PLAY — team balance is the dominant factor
-    score = balance * 0.60 + partner * 0.25 + opponent * 0.15;
+    // FAIR_PLAY: minimise spread first, then balance the two teams
+    score = spreadScore * 0.45 + balance * 0.35 + partner * 0.15 + opponent * 0.05;
   }
 
-  // Skill gap enforcement
+  // Skill gap enforcement from session rules
   const { skillMatching, maxSkillGap } = session.rules;
   if (skillMatching !== "OFF" && maxSkillGap != null) {
-    const allRatings = [...teamA, ...teamB].map(getActiveRating);
-    const individualGap = Math.max(...allRatings) - Math.min(...allRatings);
-
-    if (skillMatching === "STRICT" && individualGap > maxSkillGap) {
-      score *= 0.05; // near-zero so this combo is almost never chosen
-    } else if (skillMatching === "SOFT" && individualGap > maxSkillGap * 1.5) {
-      score *= 0.40; // penalised but not eliminated
+    if (skillMatching === "STRICT" && spread > maxSkillGap) {
+      score *= 0.05;
+    } else if (skillMatching === "SOFT" && spread > maxSkillGap * 1.5) {
+      score *= 0.40;
     }
   }
 
@@ -294,7 +304,47 @@ function scheduleSocial(
 }
 
 // ============================================
-// MAIN SCHEDULER
+// PER-COURT MATCH GENERATOR
+// Generates a single match for one court.
+// Excludes players currently playing or already
+// assigned to a pending match on another court.
+// ============================================
+
+export function generateMatchForCourt(
+  court: Court,
+  session: Session,
+  currentTime: number
+): { teamA: Team; teamB: Team } | null {
+  if (session.state !== "ACTIVE") return null;
+
+  const rng = mulberry32(generateSeed());
+
+  // Players in live matches (PENDING result)
+  const playingIds = getPlayingPlayerIds(session);
+
+  // Players already assigned to pending assignments on OTHER courts
+  const pendingIds = new Set<string>();
+  for (const c of session.courts) {
+    if (c.id === court.id) continue;
+    const pa = c.pendingAssignment ?? null;
+    if (pa) {
+      pa.teamA.playerIds.forEach((id) => pendingIds.add(id));
+      pa.teamB.playerIds.forEach((id) => pendingIds.add(id));
+    }
+  }
+
+  const eligible = getEligiblePlayers(session).filter(
+    (p) => !playingIds.has(p.id) && !pendingIds.has(p.id)
+  );
+
+  if (eligible.length < 4) return null;
+
+  const mode: ScoringMode = court.rotationMode === "SOCIAL" ? "SOCIAL" : "FAIR_PLAY";
+  return getBestTeamCombo(eligible, session, currentTime, rng, mode);
+}
+
+// ============================================
+// MAIN SCHEDULER (used by tests + legacy flow)
 // ============================================
 
 export function generateNextRound(input: SchedulerInput): SchedulerOutput {
@@ -429,7 +479,11 @@ export function recordMatchResult(
       result === "TEAM_A" ? match.teamB.playerIds : match.teamA.playerIds;
 
     const isWinner = winningIds.has(player.id);
-    const catchUpGames = Math.max(0, (player.catchUpGames ?? 0) - 1);
+
+    // Decrement priority games left; auto-disable when exhausted
+    const priorityGamesLeft = Math.max(0, (player.priorityGamesLeft ?? 0) - 1);
+    const priority = priorityGamesLeft > 0 ? player.priority : false;
+
     return {
       ...player,
       gamesPlayed: player.gamesPlayed + 1,
@@ -437,7 +491,9 @@ export function recordMatchResult(
       winStreak: isWinner ? (player.winStreak ?? 0) + 1 : 0,
       attendanceStatus: "PRESENT" as const,
       waitingSince: currentTime,
-      catchUpGames,
+      consecutiveGames: isWinner ? player.consecutiveGames : 0,
+      priority,
+      priorityGamesLeft,
       partners: [...player.partners, ...teammates],
       opponents: [...player.opponents, ...opponents],
     };
