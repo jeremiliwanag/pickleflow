@@ -8,6 +8,7 @@ import {
   generateNextRound,
   generateMatchForCourt as generateMatchForCourtEngine,
   generateGlobalNextMatch,
+  getAlternativePairing,
   recordMatchResult,
 } from "../engine/scheduler";
 import { saveSession, updateSession, getRecentSessions } from "../db/sessionDB";
@@ -438,9 +439,20 @@ addPlayer: (playerData) => {
     };
 
     const now = Date.now();
-    // Prefer a combo that doesn't include the current 4
+
+    // Try to find a combo with different players first
     const different = generateGlobalNextMatch(tempSession, now, currentIds);
-    const assignment = different ?? generateGlobalNextMatch(tempSession, now);
+
+    let assignment: { teamA: { playerIds: string[] }; teamB: { playerIds: string[] } } | null = null;
+
+    if (different) {
+      // Got a genuinely different set of players
+      assignment = different;
+    } else {
+      // Not enough other players — try a different team pairing of the same 4
+      assignment = getAlternativePairing(court.currentMatch, session.players);
+    }
+
     if (!assignment) return "no_alternative";
 
     const match: Match = {
