@@ -169,7 +169,12 @@ loadLatestSession: async () => {
                 ? ("STRICT" as const)
                 : c.backToBackPolicy,
           }));
-          set({ session: { ...latest, courts: migratedCourts } });
+          const loaded = { ...latest, courts: migratedCourts };
+          set({ session: loaded });
+          // Seed global next match if the loaded session doesn't have one yet
+          if (!loaded.nextMatch && loaded.state === "ACTIVE") {
+            get().generateNextMatch();
+          }
         }
       }
     } catch (error) {
