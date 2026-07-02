@@ -494,7 +494,16 @@ addPlayer: (playerData) => {
       return "ok";
     }
 
-    // Check if there are enough just-finished players to form an alternative
+    // Try a different pairing of the same 4 players (cycles through all 3 splits)
+    const altPairing = getAlternativePairing(session.nextMatch, session.players);
+    if (altPairing) {
+      const updated = { ...session, nextMatch: altPairing };
+      set({ session: updated });
+      updateSession(session.id, { nextMatch: altPairing });
+      return "ok";
+    }
+
+    // Check if just-finished players could unlock a different combo
     const assignedIds = new Set<string>();
     for (const court of session.courts) {
       if (court.currentMatch?.result === "PENDING") {
@@ -522,8 +531,10 @@ addPlayer: (playerData) => {
       ...session.nextMatch.teamB.playerIds,
     ]);
 
-    // Allow just-finished players by regenerating without fresh-only constraint
-    const assignment = generateGlobalNextMatch(session, Date.now(), currentIds);
+    // Allow just-finished players; fall back to alt pairing if still no other combo
+    const assignment =
+      generateGlobalNextMatch(session, Date.now(), currentIds) ??
+      getAlternativePairing(session.nextMatch, session.players);
     if (!assignment) return;
 
     const updated = { ...session, nextMatch: assignment };

@@ -489,47 +489,43 @@ export function generateGlobalNextMatch(
  * Returns null if no alternative exists (e.g. only one valid split).
  */
 export function getAlternativePairing(
-  currentMatch: Match,
+  currentMatch: { teamA: { playerIds: string[] }; teamB: { playerIds: string[] } },
   players: Player[]
 ): { teamA: Team; teamB: Team } | null {
   const allIds = [...currentMatch.teamA.playerIds, ...currentMatch.teamB.playerIds];
   const four = allIds.map((id) => players.find((p) => p.id === id)).filter(Boolean) as Player[];
   if (four.length !== 4) return null;
 
-  const currentTeamASet = new Set(currentMatch.teamA.playerIds);
-  const currentTeamBSet = new Set(currentMatch.teamB.playerIds);
-
+  // All 3 canonical pairings, fixed order — we cycle through them so every
+  // Regenerate press gives a distinct result (no alternating between 2 states).
   const splits: [[number, number], [number, number]][] = [
     [[0, 1], [2, 3]],
     [[0, 2], [1, 3]],
     [[0, 3], [1, 2]],
   ];
 
-  let bestScore = -Infinity;
-  let best: { teamA: Team; teamB: Team } | null = null;
+  const currentTeamASet = new Set(currentMatch.teamA.playerIds);
 
-  for (const [[a0, a1], [b0, b1]] of splits) {
+  // Find which split index the current match corresponds to
+  let currentIdx = -1;
+  for (let i = 0; i < splits.length; i++) {
+    const [[a0, a1], [b0, b1]] = splits[i];
     const teamAIds = [four[a0].id, four[a1].id];
     const teamBIds = [four[b0].id, four[b1].id];
-
-    // Skip if this is the same pairing as current (either orientation)
-    const sameAsCurrentA =
-      teamAIds.every((id) => currentTeamASet.has(id)) && teamBIds.every((id) => currentTeamBSet.has(id));
-    const sameAsCurrentB =
-      teamAIds.every((id) => currentTeamBSet.has(id)) && teamBIds.every((id) => currentTeamASet.has(id));
-    if (sameAsCurrentA || sameAsCurrentB) continue;
-
-    const score = getTeamBalanceScore([four[a0], four[a1]], [four[b0], four[b1]]);
-    if (score > bestScore) {
-      bestScore = score;
-      best = {
-        teamA: { playerIds: teamAIds },
-        teamB: { playerIds: teamBIds },
-      };
-    }
+    const matchesA = teamAIds.every((id) => currentTeamASet.has(id));
+    const matchesB = teamBIds.every((id) => currentTeamASet.has(id));
+    if (matchesA || matchesB) { currentIdx = i; break; }
   }
 
-  return best;
+  if (currentIdx === -1) return null;
+
+  // Step to the next split in the cycle
+  const nextIdx = (currentIdx + 1) % splits.length;
+  const [[a0, a1], [b0, b1]] = splits[nextIdx];
+  return {
+    teamA: { playerIds: [four[a0].id, four[a1].id] },
+    teamB: { playerIds: [four[b0].id, four[b1].id] },
+  };
 }
 
 // Kept for test backward compat — tests still call generateMatchForCourt
