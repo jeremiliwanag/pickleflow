@@ -305,20 +305,14 @@ function scheduleSocial(
 
 // ============================================
 // STAGE 1 — PLAYER SELECTION
-// Decides WHICH four players should play.
-// Rotation mode does NOT influence this stage.
+// Priority order (matches business rules):
+//   1. ⭐ Priority players (late arrivals) — always first
+//   2. Players with fewest games played
+//   3. Longest wait time (tiebreaker)
 //
-// Hard rules (never violated):
-//   1. No PLAYING players
-//   2. No players reserved on another court's pending
-//   3. No RESTING or LEFT players
-//   4. No back-to-back for normal players (if enough waiting)
-//
-// Selection order:
-//   1. Priority players (⭐ late arrivals) bypass back-to-back rule
-//   2. Non-consecutive eligible players, ranked by fairness score
-//   3. Consecutive players only if not enough from above
-//   4. Among the top-8 fairest, pick the 4 with smallest skill spread
+// Back-to-back rule: prefer players who haven't just
+// finished (consecutiveGames === 0). Only pull from
+// just-finished players when not enough fresh ones.
 // ============================================
 
 function getReservedIds(session: Session, excludeCourtId: string): Set<string> {
@@ -334,84 +328,35 @@ function getReservedIds(session: Session, excludeCourtId: string): Set<string> {
   return ids;
 }
 
-// Given a locked-in anchor player, find the 3 companions from candidates
-// that produce the smallest skill spread across all 4.
-function selectBestCompanions(anchor: Player, candidates: Player[]): Player[] | null {
-  if (candidates.length < 3) return null;
-  if (candidates.length === 3) return candidates;
-
-  let bestSpread = Infinity;
-  let best: Player[] | null = null;
-  const n = candidates.length;
-
-  for (let i = 0; i < n - 2; i++) {
-    for (let j = i + 1; j < n - 1; j++) {
-      for (let k = j + 1; k < n; k++) {
-        const group = [anchor, candidates[i], candidates[j], candidates[k]];
-        const ratings = group.map(getActiveRating);
-        const spread = Math.max(...ratings) - Math.min(...ratings);
-        if (spread < bestSpread) {
-          bestSpread = spread;
-          best = [candidates[i], candidates[j], candidates[k]];
-        }
-      }
-    }
-  }
-
-  return best;
-}
-
 function selectFourPlayers(
-  eligible: Player[],
-  session: Session,
+  available: Player[], // already filtered: PRESENT/WAITING, not on any court
   currentTime: number
 ): Player[] | null {
-  if (eligible.length < 4) return null;
-
-  const maxGames = Math.max(...session.players.map((p) => p.gamesPlayed), 1);
+  if (available.length < 4) return null;
 
   const hasPriority = (p: Player) =>
     p.priority === true && (p.priorityGamesLeft ?? 0) > 0;
 
-  // Hard back-to-back rule applies regardless of court mode.
-  // Rotation mode only affects team pairing (Stage 2), never player selection.
-  const priorityPlayers = eligible.filter(hasPriority);
-  const restPlayers = eligible.filter(
-    (p) => !hasPriority(p) && p.consecutiveGames === 0
-  );
-  const consecutivePlayers = eligible.filter(
-    (p) => !hasPriority(p) && p.consecutiveGames > 0
-  );
+  // Separate into three tiers
+  const priority = available.filter(hasPriority);
+  const fresh = available.filter((p) => !hasPriority(p) && (p.consecutiveGames ?? 0) === 0);
+  const justFinished = available.filter((p) => !hasPriority(p) && (p.consecutiveGames ?? 0) > 0);
 
-  const primaryPool = [...priorityPlayers, ...restPlayers];
-  const pool =
-    primaryPool.length >= 4
-      ? primaryPool
-      : [...primaryPool, ...consecutivePlayers];
+  // Use fresh pool if ≥ 4; otherwise supplement with just-finished
+  const preferred = [...priority, ...fresh];
+  const pool = preferred.length >= 4 ? preferred : [...preferred, ...justFinished];
 
   if (pool.length < 4) return null;
 
-  // Rank by fairness — who deserves court time most?
-  const ranked = pool
-    .map((p) => ({
-      player: p,
-      score: getPlayerPriorityScore(p, currentTime, maxGames),
-    }))
-    .sort((a, b) => b.score - a.score);
+  // Sort: fewest games → longest wait (fairness first, skill is secondary — handled in pairing)
+  const sorted = [...pool].sort((a, b) => {
+    if (a.gamesPlayed !== b.gamesPlayed) return a.gamesPlayed - b.gamesPlayed;
+    const aWait = a.waitingSince ?? currentTime;
+    const bWait = b.waitingSince ?? currentTime;
+    return aWait - bWait; // earlier timestamp = waited longer
+  });
 
-  // FAIRNESS FIRST: the #1 ranked player is always locked in.
-  // They have the strongest claim to court time regardless of skill level.
-  // This prevents a solo advanced/beginner player from being perpetually skipped
-  // just because they widen the skill spread.
-  const mustPlay = ranked[0].player;
-
-  // Among the next 7 most-deserving players, find the 3 that minimise spread
-  // when combined with the locked-in player.
-  const rest = ranked.slice(1, Math.min(8, ranked.length)).map((r) => r.player);
-  const companions = selectBestCompanions(mustPlay, rest);
-  if (!companions) return null;
-
-  return [mustPlay, ...companions];
+  return sorted.slice(0, 4);
 }
 
 // ============================================
@@ -523,18 +468,16 @@ export function generateGlobalNextMatch(
 ): { teamA: Team; teamB: Team } | null {
   if (session.state !== "ACTIVE") return null;
 
-  // Exclude players in any active or ready match across all courts
-  const playingIds = getPlayingPlayerIds(session);
+  // Exclude players on any court right now (Playing or Ready match)
+  const assignedIds = getPlayingPlayerIds(session);
 
-  const eligible = getEligiblePlayers(session).filter(
-    (p) => !playingIds.has(p.id)
+  const available = getEligiblePlayers(session).filter(
+    (p) => !assignedIds.has(p.id)
   );
 
-  // Stage 1: who plays?
-  const four = selectFourPlayers(eligible, session, currentTime);
+  const four = selectFourPlayers(available, currentTime);
   if (!four) return null;
 
-  // Stage 2: balanced pairing by default (court claims re-pair on assignment)
   return pairForBalance(four);
 }
 
@@ -549,11 +492,11 @@ export function generateMatchForCourt(
   const playingIds = getPlayingPlayerIds(session);
   const reservedIds = getReservedIds(session, court.id);
 
-  const eligible = getEligiblePlayers(session).filter(
+  const available = getEligiblePlayers(session).filter(
     (p) => !playingIds.has(p.id) && !reservedIds.has(p.id)
   );
 
-  const four = selectFourPlayers(eligible, session, currentTime);
+  const four = selectFourPlayers(available, currentTime);
   if (!four) return null;
 
   return pairIntoTeams(four, court, session);
@@ -707,7 +650,7 @@ export function recordMatchResult(
       winStreak: isWinner ? (player.winStreak ?? 0) + 1 : 0,
       attendanceStatus: "PRESENT" as const,
       waitingSince: currentTime,
-      consecutiveGames: player.consecutiveGames, // reset to 0 happens in startMatch when they sit out
+      consecutiveGames: 1, // just finished — deprioritised for next selection
       priority,
       priorityGamesLeft,
       partners: [...player.partners, ...teammates],

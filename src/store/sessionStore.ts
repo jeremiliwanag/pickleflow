@@ -198,18 +198,50 @@ loadLatestSession: async () => {
   startSession: async () => {
     const { session } = get();
     if (!session || session.state !== "SETUP") return;
-    const updated = {
+
+    const now = Date.now();
+    let updated: Session = {
       ...session,
       state: "ACTIVE" as const,
-      startedAt: Date.now(),
+      startedAt: now,
     };
+
+    // Auto-assign Ready matches to every active court immediately —
+    // organizer should not have to press anything to see the first matches.
+    for (const court of updated.courts.filter((c) => c.isActive)) {
+      const assignment = generateGlobalNextMatch(updated, now);
+      if (!assignment) break;
+
+      const match: Match = {
+        id: generateId("match"),
+        courtId: court.id,
+        teamA: assignment.teamA,
+        teamB: assignment.teamB,
+        result: "PENDING",
+        startTime: null, // Ready — organizer presses Start Match
+        endTime: null,
+        round: 1,
+      };
+
+      updated = {
+        ...updated,
+        courts: updated.courts.map((c) =>
+          c.id === court.id ? { ...c, currentMatch: match } : c
+        ),
+      };
+    }
+
+    // Seed the global Next Up card for whoever finishes first
+    const nextMatch = generateGlobalNextMatch(updated, now) ?? null;
+    updated = { ...updated, nextMatch };
+
     set({ session: updated });
     await updateSession(session.id, {
-      state: "ACTIVE",
+      state: updated.state,
       startedAt: updated.startedAt,
+      courts: updated.courts,
+      nextMatch: updated.nextMatch,
     });
-    // Seed the global queue with the first next match
-    get().generateNextMatch();
   },
 
   pauseSession: async () => {
@@ -478,14 +510,16 @@ addPlayer: (playerData) => {
 
     const updatedPlayers = session.players.map((p) => {
       if (assignedIds.has(p.id)) {
+        // Starting to play — clear the "just finished" flag
         return {
           ...p,
           attendanceStatus: "PLAYING" as const,
-          consecutiveGames: p.consecutiveGames + 1,
+          consecutiveGames: 0,
           waitingSince: null,
         };
       }
-      // Players sitting out this round reset their consecutive streak
+      // Everyone sitting out this round also clears their "just finished" flag.
+      // They've now waited through one full rotation, so they're fully eligible again.
       if (p.attendanceStatus === "PRESENT" || p.attendanceStatus === "WAITING") {
         return { ...p, consecutiveGames: 0 };
       }
