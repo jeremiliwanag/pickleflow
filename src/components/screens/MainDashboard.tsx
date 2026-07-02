@@ -16,7 +16,6 @@ export default function MainDashboard() {
   const replacePlayerInNextMatch = useSessionStore((s) => s.replacePlayerInNextMatch);
   const regenerateCourtMatch = useSessionStore((s) => s.regenerateCourtMatch);
   const regenerateNextMatch = useSessionStore((s) => s.regenerateNextMatch);
-  const regenerateNextMatchForce = useSessionStore((s) => s.regenerateNextMatchForce);
   const startMatch = useSessionStore((s) => s.startMatch);
   const replacePlayerInPending = useSessionStore((s) => s.replacePlayerInPending);
   const replacePlayerInCurrent = useSessionStore((s) => s.replacePlayerInCurrent);
@@ -259,7 +258,6 @@ export default function MainDashboard() {
               playingIds={courtPlayerIds}
               onReplace={(outId, inId) => replacePlayerInNextMatch(outId, inId)}
               onRegenerate={regenerateNextMatch}
-              onRegenerateForce={regenerateNextMatchForce}
               onPlayerClick={(p) => setProfilePlayerId(p.id)}
             />
           )}

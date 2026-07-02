@@ -10,9 +10,8 @@ interface NextMatchCardProps {
   /** IDs of players currently on a court (Playing or Ready). */
   playingIds: ReadonlySet<string>;
   onReplace: (outId: string, inId: string) => void;
-  /** Returns status — card handles dialogs internally. */
-  onRegenerate: () => "ok" | "no_alternative" | "needs_just_finished";
-  onRegenerateForce: () => void;
+  /** Returns "ok" or "no_alternative" — card handles feedback internally. */
+  onRegenerate: () => "ok" | "no_alternative";
   onPlayerClick?: (player: Player) => void;
 }
 
@@ -98,12 +97,10 @@ export default function NextMatchCard({
   playingIds,
   onReplace,
   onRegenerate,
-  onRegenerateForce,
   onPlayerClick,
 }: NextMatchCardProps) {
   const [replacingId, setReplacingId] = useState<string | null>(null);
   const [showWhy, setShowWhy] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
   const [noAltMsg, setNoAltMsg] = useState(false);
 
   const getPlayer = (id: string) => players.find((p) => p.id === id);
@@ -124,8 +121,6 @@ export default function NextMatchCard({
     const result = onRegenerate();
     if (result === "ok") {
       setShowWhy(false);
-    } else if (result === "needs_just_finished") {
-      setShowConfirm(true);
     } else {
       setNoAltMsg(true);
       setTimeout(() => setNoAltMsg(false), 3500);
@@ -161,31 +156,6 @@ export default function NextMatchCard({
           onSelect={(inId) => { onReplace(replacingId!, inId); setReplacingId(null); }}
           onCancel={() => setReplacingId(null)}
         />
-      )}
-
-      {/* Confirm dialog: would need just-finished players */}
-      {showConfirm && (
-        <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-20 rounded-2xl flex flex-col items-center justify-center p-6 gap-4">
-          <p className="text-2xl">⚠️</p>
-          <p className="font-black text-gray-900 text-center text-sm">Regenerating requires just-finished players</p>
-          <p className="text-xs text-gray-500 text-center">
-            There aren't enough fully-eligible waiting players. Regenerating will include players who just came off court, which may break the fairness rotation.
-          </p>
-          <div className="flex gap-3 w-full">
-            <button
-              onClick={() => setShowConfirm(false)}
-              className="flex-1 py-2.5 rounded-xl border-2 border-gray-200 text-gray-700 font-bold text-sm hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => { onRegenerateForce(); setShowConfirm(false); setShowWhy(false); }}
-              className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm"
-            >
-              Regenerate anyway
-            </button>
-          </div>
-        </div>
       )}
 
       {/* Header */}

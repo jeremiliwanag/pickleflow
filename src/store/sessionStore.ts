@@ -102,8 +102,7 @@ interface SessionStore {
   // Global scheduler
   generateInitialMatches: () => void;
   generateNextMatch: () => void;
-  regenerateNextMatch: () => "ok" | "no_alternative" | "needs_just_finished";
-  regenerateNextMatchForce: () => void;
+  regenerateNextMatch: () => "ok" | "no_alternative";
   regenerateCourtMatch: (courtId: string) => "ok" | "no_alternative";
   claimNextMatch: (courtId: string) => void;
   replacePlayerInNextMatch: (outId: string, inId: string) => void;
@@ -427,39 +426,15 @@ addPlayer: (playerData) => {
     const court = session.courts.find((c) => c.id === courtId);
     if (!court?.currentMatch || court.currentMatch.startTime !== null) return "no_alternative";
 
-    const currentIds = new Set([
-      ...court.currentMatch.teamA.playerIds,
-      ...court.currentMatch.teamB.playerIds,
-    ]);
-
-    // Temporarily clear the match so those players re-enter the pool
-    const tempSession: Session = {
-      ...session,
-      courts: session.courts.map((c) => c.id === courtId ? { ...c, currentMatch: null } : c),
-    };
-
-    const now = Date.now();
-
-    // Try to find a combo with different players first
-    const different = generateGlobalNextMatch(tempSession, now, currentIds);
-
-    let assignment: { teamA: { playerIds: string[] }; teamB: { playerIds: string[] } } | null = null;
-
-    if (different) {
-      // Got a genuinely different set of players
-      assignment = different;
-    } else {
-      // Not enough other players — try a different team pairing of the same 4
-      assignment = getAlternativePairing(court.currentMatch, session.players);
-    }
-
-    if (!assignment) return "no_alternative";
+    // Regenerate = same 4 players, different pairing. Never touches the waiting pool.
+    const alt = getAlternativePairing(court.currentMatch, session.players);
+    if (!alt) return "no_alternative";
 
     const match: Match = {
       id: generateId("match"),
       courtId,
-      teamA: assignment.teamA,
-      teamB: assignment.teamB,
+      teamA: alt.teamA,
+      teamB: alt.teamB,
       result: "PENDING",
       startTime: null,
       endTime: null,
@@ -479,67 +454,14 @@ addPlayer: (playerData) => {
     const { session } = get();
     if (!session?.nextMatch) return "no_alternative";
 
-    const currentIds = new Set([
-      ...session.nextMatch.teamA.playerIds,
-      ...session.nextMatch.teamB.playerIds,
-    ]);
+    // Regenerate = same 4 players, different pairing. Never changes who is queued.
+    const alt = getAlternativePairing(session.nextMatch, session.players);
+    if (!alt) return "no_alternative";
 
-    const now = Date.now();
-    // Try a different combo (excluding current 4, fresh players only)
-    const different = generateGlobalNextMatch(session, now, currentIds);
-    if (different) {
-      const updated = { ...session, nextMatch: different };
-      set({ session: updated });
-      updateSession(session.id, { nextMatch: different });
-      return "ok";
-    }
-
-    // Try a different pairing of the same 4 players (cycles through all 3 splits)
-    const altPairing = getAlternativePairing(session.nextMatch, session.players);
-    if (altPairing) {
-      const updated = { ...session, nextMatch: altPairing };
-      set({ session: updated });
-      updateSession(session.id, { nextMatch: altPairing });
-      return "ok";
-    }
-
-    // Check if just-finished players could unlock a different combo
-    const assignedIds = new Set<string>();
-    for (const court of session.courts) {
-      if (court.currentMatch?.result === "PENDING") {
-        court.currentMatch.teamA.playerIds.forEach((id) => assignedIds.add(id));
-        court.currentMatch.teamB.playerIds.forEach((id) => assignedIds.add(id));
-      }
-    }
-    const available = session.players.filter(
-      (p) =>
-        (p.attendanceStatus === "PRESENT" || p.attendanceStatus === "WAITING") &&
-        !assignedIds.has(p.id) &&
-        !currentIds.has(p.id)
-    );
-    if (available.length >= 4) return "needs_just_finished";
-    return "no_alternative";
-  },
-
-  regenerateNextMatchForce: () => {
-    // Called after organiser confirms the "will use just-finished players" dialog
-    const { session } = get();
-    if (!session?.nextMatch) return;
-
-    const currentIds = new Set([
-      ...session.nextMatch.teamA.playerIds,
-      ...session.nextMatch.teamB.playerIds,
-    ]);
-
-    // Allow just-finished players; fall back to alt pairing if still no other combo
-    const assignment =
-      generateGlobalNextMatch(session, Date.now(), currentIds) ??
-      getAlternativePairing(session.nextMatch, session.players);
-    if (!assignment) return;
-
-    const updated = { ...session, nextMatch: assignment };
+    const updated = { ...session, nextMatch: alt };
     set({ session: updated });
-    updateSession(session.id, { nextMatch: assignment });
+    updateSession(session.id, { nextMatch: alt });
+    return "ok";
   },
 
   generateNextMatch: () => {
