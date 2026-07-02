@@ -370,7 +370,7 @@ export default function Sidebar({
             onClick={() => setShowPicker(true)}
             className="text-xs px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-colors"
           >
-            + Add
+            + Add Players
           </button>
         </div>
 

@@ -294,12 +294,42 @@ endSession: async () => {
       attendanceStatus: "PRESENT",
     };
 
-    const updated = {
-      ...session,
-      players: [...session.players, newPlayer],
-    };
-    set({ session: updated });
-    updateSession(session.id, { players: updated.players });
+    let s: Session = { ...session, players: [...session.players, newPlayer] };
+    set({ session: s });
+    updateSession(session.id, { players: s.players });
+
+    // Reactively fill empty courts and the global queue as players arrive
+    if (s.state === "ACTIVE") {
+      const now = Date.now();
+
+      // Assign a Ready match to every empty active court
+      for (const court of s.courts.filter((c) => c.isActive && !c.currentMatch)) {
+        const assignment = generateGlobalNextMatch(s, now);
+        if (!assignment) break;
+        const match: Match = {
+          id: generateId("match"),
+          courtId: court.id,
+          teamA: assignment.teamA,
+          teamB: assignment.teamB,
+          result: "PENDING",
+          startTime: null,
+          endTime: null,
+          round: s.currentRound + 1,
+        };
+        s = { ...s, courts: s.courts.map((c) => c.id === court.id ? { ...c, currentMatch: match } : c) };
+      }
+
+      // Seed the global Next Up card if it's empty
+      if (!s.nextMatch) {
+        const nextMatch = generateGlobalNextMatch(s, now);
+        if (nextMatch) s = { ...s, nextMatch };
+      }
+
+      if (s.courts !== session.courts || s.nextMatch !== session.nextMatch) {
+        set({ session: s });
+        updateSession(session.id, { courts: s.courts, nextMatch: s.nextMatch });
+      }
+    }
   },
 
   // ============================================
