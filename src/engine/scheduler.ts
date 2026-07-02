@@ -464,7 +464,9 @@ function pairIntoTeams(
 
 export function generateGlobalNextMatch(
   session: Session,
-  currentTime: number
+  currentTime: number,
+  /** Extra IDs to exclude — used by Regenerate to force a different combo */
+  additionalExcludeIds?: ReadonlySet<string>
 ): { teamA: Team; teamB: Team } | null {
   if (session.state !== "ACTIVE") return null;
 
@@ -472,7 +474,7 @@ export function generateGlobalNextMatch(
   const assignedIds = getPlayingPlayerIds(session);
 
   const available = getEligiblePlayers(session).filter(
-    (p) => !assignedIds.has(p.id)
+    (p) => !assignedIds.has(p.id) && !additionalExcludeIds?.has(p.id)
   );
 
   const four = selectFourPlayers(available, currentTime);

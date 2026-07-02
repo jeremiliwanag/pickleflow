@@ -11,9 +11,12 @@ import type { Match, SkillTier, RotationMode, Player, Session } from "../../type
 
 export default function MainDashboard() {
   const session = useSessionStore((s) => s.session);
-  const generateNextMatch = useSessionStore((s) => s.generateNextMatch);
+  const generateInitialMatches = useSessionStore((s) => s.generateInitialMatches);
   const claimNextMatch = useSessionStore((s) => s.claimNextMatch);
   const replacePlayerInNextMatch = useSessionStore((s) => s.replacePlayerInNextMatch);
+  const regenerateCourtMatch = useSessionStore((s) => s.regenerateCourtMatch);
+  const regenerateNextMatch = useSessionStore((s) => s.regenerateNextMatch);
+  const regenerateNextMatchForce = useSessionStore((s) => s.regenerateNextMatchForce);
   const startMatch = useSessionStore((s) => s.startMatch);
   const replacePlayerInPending = useSessionStore((s) => s.replacePlayerInPending);
   const replacePlayerInCurrent = useSessionStore((s) => s.replacePlayerInCurrent);
@@ -97,6 +100,26 @@ export default function MainDashboard() {
 
   const activeCourts = session.courts.filter((c) => c.isActive);
 
+  // IDs of players who are on a court (Ready or Playing) — used to filter Replace picker in NextMatchCard
+  const courtPlayerIds = new Set(
+    activeCourts.flatMap((c) =>
+      c.currentMatch?.result === "PENDING"
+        ? [...c.currentMatch.teamA.playerIds, ...c.currentMatch.teamB.playerIds]
+        : []
+    )
+  );
+
+  // Show "Generate Initial Matches" banner when all courts are empty and we have ≥4 eligible players
+  const allCourtsEmpty = activeCourts.every((c) => !c.currentMatch || c.currentMatch.result !== "PENDING");
+  const eligibleCount = session.players.filter(
+    (p) => p.attendanceStatus === "PRESENT" || p.attendanceStatus === "WAITING"
+  ).length;
+  const showGenerateBanner =
+    session.state === "ACTIVE" &&
+    allCourtsEmpty &&
+    !session.nextMatch &&
+    eligibleCount >= 4;
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       {profilePlayer && (
@@ -177,6 +200,26 @@ export default function MainDashboard() {
           </p>
         </div>
 
+        {/* Generate Initial Matches banner */}
+        {showGenerateBanner && (
+          <div className="mb-4 flex items-center justify-between bg-emerald-50 border-2 border-emerald-200 rounded-2xl px-5 py-4">
+            <div>
+              <p className="font-black text-emerald-800 text-sm">
+                {eligibleCount} players ready
+              </p>
+              <p className="text-xs text-emerald-600 mt-0.5">
+                Generate matches when you're ready to start.
+              </p>
+            </div>
+            <button
+              onClick={generateInitialMatches}
+              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm transition-colors shadow-sm"
+            >
+              ▶ Generate Initial Matches
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           {activeCourts.map((court) => (
             <CourtCard
@@ -187,6 +230,7 @@ export default function MainDashboard() {
               hasNextMatch={!!session.nextMatch}
               onClaimNextMatch={() => claimNextMatch(court.id)}
               onStartMatch={() => startMatch(court.id)}
+              onRegenerate={() => regenerateCourtMatch(court.id)}
               onReplacePlayer={(outId, inId) => {
                 const c = session.courts.find((c) => c.id === court.id);
                 const inReadyCurrent =
@@ -212,8 +256,10 @@ export default function MainDashboard() {
             <NextMatchCard
               nextMatch={session.nextMatch}
               players={session.players}
+              playingIds={courtPlayerIds}
               onReplace={(outId, inId) => replacePlayerInNextMatch(outId, inId)}
-              onRegenerate={() => generateNextMatch()}
+              onRegenerate={regenerateNextMatch}
+              onRegenerateForce={regenerateNextMatchForce}
               onPlayerClick={(p) => setProfilePlayerId(p.id)}
             />
           )}

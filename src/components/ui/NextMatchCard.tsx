@@ -7,8 +7,12 @@ import PlayerCard from "./PlayerCard";
 interface NextMatchCardProps {
   nextMatch: { teamA: { playerIds: string[] }; teamB: { playerIds: string[] } };
   players: Player[];
+  /** IDs of players currently on a court (Playing or Ready). */
+  playingIds: ReadonlySet<string>;
   onReplace: (outId: string, inId: string) => void;
-  onRegenerate: () => void;
+  /** Returns status — card handles dialogs internally. */
+  onRegenerate: () => "ok" | "no_alternative" | "needs_just_finished";
+  onRegenerateForce: () => void;
   onPlayerClick?: (player: Player) => void;
 }
 
@@ -91,11 +95,16 @@ function ReplacePicker({
 export default function NextMatchCard({
   nextMatch,
   players,
+  playingIds,
   onReplace,
   onRegenerate,
+  onRegenerateForce,
   onPlayerClick,
 }: NextMatchCardProps) {
   const [replacingId, setReplacingId] = useState<string | null>(null);
+  const [showWhy, setShowWhy] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [noAltMsg, setNoAltMsg] = useState(false);
 
   const getPlayer = (id: string) => players.find((p) => p.id === id);
 
@@ -106,9 +115,22 @@ export default function NextMatchCard({
   const waitingPlayers = players.filter(
     (p) =>
       (p.attendanceStatus === "WAITING" || p.attendanceStatus === "PRESENT") &&
-      !allNextIds.has(p.id)
+      !allNextIds.has(p.id) &&
+      !playingIds.has(p.id)
   );
   const replacingPlayer = replacingId ? getPlayer(replacingId) : null;
+
+  const handleRegenerate = () => {
+    const result = onRegenerate();
+    if (result === "ok") {
+      setShowWhy(false);
+    } else if (result === "needs_just_finished") {
+      setShowConfirm(true);
+    } else {
+      setNoAltMsg(true);
+      setTimeout(() => setNoAltMsg(false), 3500);
+    }
+  };
 
   const renderTeam = (label: string, ids: string[]) => (
     <div className="flex-1 flex flex-col gap-2">
@@ -136,12 +158,34 @@ export default function NextMatchCard({
         <ReplacePicker
           outPlayer={replacingPlayer}
           waitingPlayers={waitingPlayers}
-          onSelect={(inId) => {
-            onReplace(replacingId!, inId);
-            setReplacingId(null);
-          }}
+          onSelect={(inId) => { onReplace(replacingId!, inId); setReplacingId(null); }}
           onCancel={() => setReplacingId(null)}
         />
+      )}
+
+      {/* Confirm dialog: would need just-finished players */}
+      {showConfirm && (
+        <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-20 rounded-2xl flex flex-col items-center justify-center p-6 gap-4">
+          <p className="text-2xl">⚠️</p>
+          <p className="font-black text-gray-900 text-center text-sm">Regenerating requires just-finished players</p>
+          <p className="text-xs text-gray-500 text-center">
+            There aren't enough fully-eligible waiting players. Regenerating will include players who just came off court, which may break the fairness rotation.
+          </p>
+          <div className="flex gap-3 w-full">
+            <button
+              onClick={() => setShowConfirm(false)}
+              className="flex-1 py-2.5 rounded-xl border-2 border-gray-200 text-gray-700 font-bold text-sm hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => { onRegenerateForce(); setShowConfirm(false); setShowWhy(false); }}
+              className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm"
+            >
+              Regenerate anyway
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Header */}
@@ -152,16 +196,56 @@ export default function NextMatchCard({
             Queued
           </span>
         </div>
-        <button
-          onClick={onRegenerate}
-          className="text-xs px-3 py-1.5 rounded-xl bg-white border border-violet-200 hover:bg-violet-100 text-violet-700 font-bold transition-colors"
-          title="Regenerate next match"
-        >
-          ↻ Regenerate
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowWhy((v) => !v)}
+            className={`text-xs px-2.5 py-1.5 rounded-xl font-bold border transition-colors ${
+              showWhy
+                ? "bg-violet-100 text-violet-700 border-violet-300"
+                : "bg-white text-gray-500 border-violet-200 hover:bg-violet-50"
+            }`}
+            title="Why this match?"
+          >
+            ?
+          </button>
+          <button
+            onClick={handleRegenerate}
+            className="text-xs px-3 py-1.5 rounded-xl bg-white border border-violet-200 hover:bg-violet-100 text-violet-700 font-bold transition-colors"
+            title="Regenerate next match"
+          >
+            ↻ Regenerate
+          </button>
+        </div>
       </div>
 
       <div className="p-5">
+        {/* Why? info panel */}
+        {showWhy && (
+          <div className="mb-3 p-3 bg-violet-50 rounded-xl border border-violet-100 text-xs text-violet-800 space-y-1">
+            <p className="font-black text-violet-700 mb-1">Why this queue?</p>
+            {[...nextMatch.teamA.playerIds, ...nextMatch.teamB.playerIds].map((id) => {
+              const p = players.find((pl) => pl.id === id);
+              if (!p) return null;
+              const waited = p.waitingSince ? Math.round((Date.now() - p.waitingSince) / 60000) : 0;
+              return (
+                <p key={id}>
+                  <span className="font-bold">{p.name}</span> — {p.gamesPlayed}G played
+                  {waited > 0 ? `, waited ${waited}m` : ""}
+                  {(p.consecutiveGames ?? 0) === 0 ? "" : " (just recovered)"}
+                </p>
+              );
+            })}
+            <p className="text-violet-400 mt-1">Selected by: fewest games → longest wait → skill balance</p>
+          </div>
+        )}
+
+        {/* No alternative message */}
+        {noAltMsg && (
+          <div className="mb-3 p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800 font-medium text-center">
+            There are no other eligible players available — this is already the fairest possible match.
+          </div>
+        )}
+
         <div className="flex items-stretch gap-3 mb-3">
           {renderTeam("Team A", nextMatch.teamA.playerIds)}
           <div className="flex items-center justify-center px-2">
@@ -172,7 +256,7 @@ export default function NextMatchCard({
           {renderTeam("Team B", nextMatch.teamB.playerIds)}
         </div>
         <p className="text-center text-xs text-gray-400 mt-1">
-          Will be assigned when the next court finishes · Tap to replace
+          Assigned when the next court finishes · Tap a player to replace
         </p>
       </div>
     </div>

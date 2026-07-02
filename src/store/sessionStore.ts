@@ -99,7 +99,11 @@ interface SessionStore {
   updateCourt: (courtId: string, updates: Partial<Court>) => void;
 
   // Global scheduler
+  generateInitialMatches: () => void;
   generateNextMatch: () => void;
+  regenerateNextMatch: () => "ok" | "no_alternative" | "needs_just_finished";
+  regenerateNextMatchForce: () => void;
+  regenerateCourtMatch: (courtId: string) => "ok" | "no_alternative";
   claimNextMatch: (courtId: string) => void;
   replacePlayerInNextMatch: (outId: string, inId: string) => void;
   // Per-court (still used for Replace in ready current match)
@@ -294,42 +298,10 @@ endSession: async () => {
       attendanceStatus: "PRESENT",
     };
 
-    let s: Session = { ...session, players: [...session.players, newPlayer] };
+    const s: Session = { ...session, players: [...session.players, newPlayer] };
     set({ session: s });
     updateSession(session.id, { players: s.players });
-
-    // Reactively fill empty courts and the global queue as players arrive
-    if (s.state === "ACTIVE") {
-      const now = Date.now();
-
-      // Assign a Ready match to every empty active court
-      for (const court of s.courts.filter((c) => c.isActive && !c.currentMatch)) {
-        const assignment = generateGlobalNextMatch(s, now);
-        if (!assignment) break;
-        const match: Match = {
-          id: generateId("match"),
-          courtId: court.id,
-          teamA: assignment.teamA,
-          teamB: assignment.teamB,
-          result: "PENDING",
-          startTime: null,
-          endTime: null,
-          round: s.currentRound + 1,
-        };
-        s = { ...s, courts: s.courts.map((c) => c.id === court.id ? { ...c, currentMatch: match } : c) };
-      }
-
-      // Seed the global Next Up card if it's empty
-      if (!s.nextMatch) {
-        const nextMatch = generateGlobalNextMatch(s, now);
-        if (nextMatch) s = { ...s, nextMatch };
-      }
-
-      if (s.courts !== session.courts || s.nextMatch !== session.nextMatch) {
-        set({ session: s });
-        updateSession(session.id, { courts: s.courts, nextMatch: s.nextMatch });
-      }
-    }
+    // No auto-fill — organiser clicks "Generate Initial Matches" when ready
   },
 
   // ============================================
@@ -414,6 +386,138 @@ addPlayer: (playerData) => {
   // ============================================
   // PER-COURT SCHEDULER
   // ============================================
+
+  generateInitialMatches: () => {
+    const { session } = get();
+    if (!session || session.state !== "ACTIVE") return;
+
+    const now = Date.now();
+    let s = { ...session };
+
+    for (const court of s.courts.filter((c) => c.isActive && !c.currentMatch)) {
+      const assignment = generateGlobalNextMatch(s, now);
+      if (!assignment) break;
+      const match: Match = {
+        id: generateId("match"),
+        courtId: court.id,
+        teamA: assignment.teamA,
+        teamB: assignment.teamB,
+        result: "PENDING",
+        startTime: null,
+        endTime: null,
+        round: s.currentRound + 1,
+      };
+      s = { ...s, courts: s.courts.map((c) => c.id === court.id ? { ...c, currentMatch: match } : c) };
+    }
+
+    if (!s.nextMatch) {
+      const nextMatch = generateGlobalNextMatch(s, now);
+      if (nextMatch) s = { ...s, nextMatch };
+    }
+
+    set({ session: s });
+    updateSession(session.id, { courts: s.courts, nextMatch: s.nextMatch });
+  },
+
+  regenerateCourtMatch: (courtId) => {
+    const { session } = get();
+    if (!session) return "no_alternative";
+
+    const court = session.courts.find((c) => c.id === courtId);
+    if (!court?.currentMatch || court.currentMatch.startTime !== null) return "no_alternative";
+
+    const currentIds = new Set([
+      ...court.currentMatch.teamA.playerIds,
+      ...court.currentMatch.teamB.playerIds,
+    ]);
+
+    // Temporarily clear the match so those players re-enter the pool
+    const tempSession: Session = {
+      ...session,
+      courts: session.courts.map((c) => c.id === courtId ? { ...c, currentMatch: null } : c),
+    };
+
+    const now = Date.now();
+    // Prefer a combo that doesn't include the current 4
+    const different = generateGlobalNextMatch(tempSession, now, currentIds);
+    const assignment = different ?? generateGlobalNextMatch(tempSession, now);
+    if (!assignment) return "no_alternative";
+
+    const match: Match = {
+      id: generateId("match"),
+      courtId,
+      teamA: assignment.teamA,
+      teamB: assignment.teamB,
+      result: "PENDING",
+      startTime: null,
+      endTime: null,
+      round: session.currentRound + 1,
+    };
+
+    const updatedCourts = session.courts.map((c) =>
+      c.id === courtId ? { ...c, currentMatch: match } : c
+    );
+    const updated = { ...session, courts: updatedCourts };
+    set({ session: updated });
+    updateSession(session.id, { courts: updatedCourts });
+    return "ok";
+  },
+
+  regenerateNextMatch: () => {
+    const { session } = get();
+    if (!session?.nextMatch) return "no_alternative";
+
+    const currentIds = new Set([
+      ...session.nextMatch.teamA.playerIds,
+      ...session.nextMatch.teamB.playerIds,
+    ]);
+
+    const now = Date.now();
+    // Try a different combo (excluding current 4, fresh players only)
+    const different = generateGlobalNextMatch(session, now, currentIds);
+    if (different) {
+      const updated = { ...session, nextMatch: different };
+      set({ session: updated });
+      updateSession(session.id, { nextMatch: different });
+      return "ok";
+    }
+
+    // Check if there are enough just-finished players to form an alternative
+    const assignedIds = new Set<string>();
+    for (const court of session.courts) {
+      if (court.currentMatch?.result === "PENDING") {
+        court.currentMatch.teamA.playerIds.forEach((id) => assignedIds.add(id));
+        court.currentMatch.teamB.playerIds.forEach((id) => assignedIds.add(id));
+      }
+    }
+    const available = session.players.filter(
+      (p) =>
+        (p.attendanceStatus === "PRESENT" || p.attendanceStatus === "WAITING") &&
+        !assignedIds.has(p.id) &&
+        !currentIds.has(p.id)
+    );
+    if (available.length >= 4) return "needs_just_finished";
+    return "no_alternative";
+  },
+
+  regenerateNextMatchForce: () => {
+    // Called after organiser confirms the "will use just-finished players" dialog
+    const { session } = get();
+    if (!session?.nextMatch) return;
+
+    const currentIds = new Set([
+      ...session.nextMatch.teamA.playerIds,
+      ...session.nextMatch.teamB.playerIds,
+    ]);
+
+    // Allow just-finished players by regenerating without fresh-only constraint
+    const assignment = generateGlobalNextMatch(session, Date.now(), currentIds);
+    if (!assignment) return;
+
+    const updated = { ...session, nextMatch: assignment };
+    set({ session: updated });
+    updateSession(session.id, { nextMatch: assignment });
+  },
 
   generateNextMatch: () => {
     const { session } = get();

@@ -11,16 +11,14 @@ interface CourtCardProps {
   court: Court;
   players: Player[];
   rules?: SessionRules;
-  /** Claim the global next match for this court (empty state). */
   onClaimNextMatch: () => void;
-  /** Whether a global next match is currently queued. */
   hasNextMatch: boolean;
   onStartMatch: () => void;
+  onRegenerate: () => "ok" | "no_alternative";
   onReplacePlayer: (outId: string, inId: string) => void;
   onRecordWinner: (match: Match, result: "TEAM_A" | "TEAM_B") => void;
   onPlayerClick?: (player: Player) => void;
   onModeChange?: (mode: RotationMode) => void;
-  /** Legacy – still accepted so existing call sites don't break. */
   onGenerate?: () => void;
 }
 
@@ -131,12 +129,15 @@ export default function CourtCard({
   onClaimNextMatch,
   hasNextMatch,
   onStartMatch,
+  onRegenerate,
   onReplacePlayer,
   onRecordWinner,
   onPlayerClick,
   onModeChange,
 }: CourtCardProps) {
   const [replacingId, setReplacingId] = useState<string | null>(null);
+  const [showWhy, setShowWhy] = useState(false);
+  const [regenMsg, setRegenMsg] = useState<string | null>(null);
 
   const match = court.currentMatch;
   // Ready = match waiting for organizer to press Start (no timer yet)
@@ -275,9 +276,7 @@ export default function CourtCard({
           )
         )}
 
-        {/* ── READY current match ───────────────────────────────────────────
-            Claimed from global Next Match. Organizer can replace players.
-            Timer hasn't started. Win buttons are NOT shown yet.          */}
+        {/* ── READY current match ─────────────────────────────────────────── */}
         {isReady && match && (
           <div>
             <div className="flex items-stretch gap-3 mb-3">
@@ -289,13 +288,65 @@ export default function CourtCard({
               </div>
               {renderTeam("Team B", match.teamB.playerIds, true)}
             </div>
-            <button
-              onClick={onStartMatch}
-              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm transition-colors shadow-sm"
-            >
-              ▶ Start Match
-            </button>
-            <p className="text-center text-xs text-gray-400 mt-2">
+
+            {/* Why? info panel */}
+            {showWhy && (
+              <div className="mb-3 p-3 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-800 space-y-1">
+                <p className="font-black text-blue-700 mb-1">Why this match?</p>
+                {[...match.teamA.playerIds, ...match.teamB.playerIds].map((id) => {
+                  const p = players.find((pl) => pl.id === id);
+                  if (!p) return null;
+                  const waited = p.waitingSince ? Math.round((Date.now() - p.waitingSince) / 60000) : 0;
+                  return (
+                    <p key={id}>
+                      <span className="font-bold">{p.name}</span> — {p.gamesPlayed}G played
+                      {waited > 0 ? `, waited ${waited}m` : ""}
+                      {(p.consecutiveGames ?? 0) === 0 ? "" : " (just recovered)"}
+                    </p>
+                  );
+                })}
+                <p className="text-blue-500 mt-1">Selected by: fewest games → longest wait → skill balance</p>
+              </div>
+            )}
+
+            {/* Regen feedback */}
+            {regenMsg && (
+              <p className="text-xs text-center text-amber-600 mb-2 font-medium">{regenMsg}</p>
+            )}
+
+            <div className="flex gap-2 mb-2">
+              <button
+                onClick={onStartMatch}
+                className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm transition-colors shadow-sm"
+              >
+                ▶ Start Match
+              </button>
+              <button
+                onClick={() => {
+                  const result = onRegenerate();
+                  if (result === "no_alternative") {
+                    setRegenMsg("No other valid combination — this is already the fairest match.");
+                    setTimeout(() => setRegenMsg(null), 3000);
+                  } else {
+                    setRegenMsg(null);
+                  }
+                }}
+                className="px-4 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-sm transition-colors"
+                title="Regenerate match"
+              >
+                ↻
+              </button>
+              <button
+                onClick={() => setShowWhy((v) => !v)}
+                className={`px-3 py-3 rounded-xl text-sm font-bold transition-colors ${
+                  showWhy ? "bg-blue-100 text-blue-700" : "bg-gray-100 hover:bg-gray-200 text-gray-500"
+                }`}
+                title="Why this match?"
+              >
+                ?
+              </button>
+            </div>
+            <p className="text-center text-xs text-gray-400">
               Tap a player card to replace before starting
             </p>
           </div>
