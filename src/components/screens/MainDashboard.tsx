@@ -115,10 +115,14 @@ export default function MainDashboard() {
             updateSessionPlayer(profilePlayer.id, { photoURL: url });
           }}
           onUpdateSelfRating={async (tier, division) => {
-            await updateRating(profilePlayer.id, "self", tier, division);
-            const { roster } = usePlayerStore.getState();
-            const updated = roster.find((p) => p.id === profilePlayer.id);
-            if (updated) updateSessionPlayer(profilePlayer.id, { ratings: updated.ratings });
+            // Update the session player directly — roster may have a different ID
+            const newRatings = {
+              ...profilePlayer.ratings,
+              self: { tier, division },
+            };
+            updateSessionPlayer(profilePlayer.id, { ratings: newRatings });
+            // Best-effort roster sync (may be a no-op if IDs differ)
+            await updateRating(profilePlayer.id, "self", tier, division).catch(() => {});
           }}
           onResetCommunityRatings={async () => {
             await resetCommunityRatings(profilePlayer.id);
@@ -149,10 +153,13 @@ export default function MainDashboard() {
           updateSessionPlayer(playerId, { photoURL });
         }}
         onUpdateSelfRating={async (playerId, tier, division) => {
-          await updateRating(playerId, "self", tier, division);
-          const { roster } = usePlayerStore.getState();
-          const updated = roster.find((p) => p.id === playerId);
-          if (updated) updateSessionPlayer(playerId, { ratings: updated.ratings });
+          const player = session.players.find((p) => p.id === playerId);
+          if (player) {
+            updateSessionPlayer(playerId, {
+              ratings: { ...player.ratings, self: { tier, division } },
+            });
+          }
+          await updateRating(playerId, "self", tier, division).catch(() => {});
         }}
         onResetCommunityRatings={async (playerId) => {
           await resetCommunityRatings(playerId);
